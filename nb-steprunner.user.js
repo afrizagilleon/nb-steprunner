@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         nb-steprunner
-// @version      0.5.0
+// @version      0.6.0
 // @author       Afriza
 // @description  Notebook-style step runner di dalam page: tiap cell dijalankan independen (blob-module), ctx bersama, resume/checkpoint, helper selector. Editor cell di panel.
 // @match        https://GANTI-SITUS-TARGET-ANDA/*
@@ -317,6 +317,7 @@
     const [delay, setDelay] = useState(500);
     const [maxIter, setMaxIter] = useState(100);
     const [onError, setOnError] = useState('stop'); // 'stop' | 'continue' | 'reload'
+    const [dragOverId, setDragOverId] = useState(null);
     const [visible, setVisible] = useState(true);
     const [pos, setPos] = useState({ x: 20, y: 20, w: 420, h: 480, listW: 130, outH: 130 });
     const [miniPos, setMiniPos] = useState({ x: 20, y: 80 });
@@ -328,6 +329,7 @@
     const saveTimer = useRef(null);
     const stopRef = useRef(false);
     const cellsRef = useRef([]); // cells terbaru untuk dibaca di dalam loop
+    const dragIdRef = useRef(null); // id cell yang sedang di-drag
 
     // ---- load awal: notebook + posisi + restore checkpoint ----
     useEffect(() => {
@@ -418,6 +420,20 @@
       mutateCells((prev) =>
         prev.map((c) => (c.id === id ? { ...c, enabled: c.enabled === false } : c))
       );
+    }
+
+    // Reorder: pindahkan cell drag ke posisi cell target.
+    function moveCell(dragId, targetId) {
+      if (!dragId || dragId === targetId) return;
+      mutateCells((prev) => {
+        const from = prev.findIndex((c) => c.id === dragId);
+        const to = prev.findIndex((c) => c.id === targetId);
+        if (from < 0 || to < 0) return prev;
+        const next = prev.slice();
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
     }
 
     function stopRun() {
@@ -642,8 +658,16 @@
             <div style=${{ ...st.list, width: pos.listW + 'px' }}>
               ${cells.length === 0 && html`<div style=${st.empty}>Belum ada cell. Klik + Cell.</div>`}
               ${cells.map((c) => html`
-                <div key=${c.id} style=${{ ...st.cellRow, ...(c.id === selectedId ? st.cellRowActive : {}), ...(c.kind === 'step' && c.enabled === false ? st.cellRowOff : {}) }}
+                <div key=${c.id}
+                     draggable=${true}
+                     onDragStart=${(e) => { dragIdRef.current = c.id; e.dataTransfer.effectAllowed = 'move'; }}
+                     onDragOver=${(e) => { e.preventDefault(); if (dragOverId !== c.id) setDragOverId(c.id); }}
+                     onDragLeave=${() => { if (dragOverId === c.id) setDragOverId(null); }}
+                     onDrop=${(e) => { e.preventDefault(); moveCell(dragIdRef.current, c.id); setDragOverId(null); dragIdRef.current = null; }}
+                     onDragEnd=${() => { setDragOverId(null); dragIdRef.current = null; }}
+                     style=${{ ...st.cellRow, ...(c.id === selectedId ? st.cellRowActive : {}), ...(c.kind === 'step' && c.enabled === false ? st.cellRowOff : {}), ...(dragOverId === c.id ? st.cellRowDrag : {}) }}
                      onClick=${() => setSelectedId(c.id)}>
+                  <span style=${st.grip} title="tarik untuk memindah urutan">⠿</span>
                   ${c.kind === 'step'
                     ? html`<input type="checkbox" title="ikut Run All" style=${st.chk}
                         checked=${c.enabled !== false}
@@ -720,6 +744,8 @@
     empty: { padding: 10, opacity: 0.5 },
     cellRow: { display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', cursor: 'pointer', borderBottom: '1px solid #26263a' },
     cellRowActive: { background: '#313244' },
+    cellRowDrag: { borderTop: '2px solid #89b4fa' },
+    grip: { cursor: 'grab', opacity: 0.4, flex: '0 0 auto', fontSize: 12, lineHeight: 1 },
     cellName: { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
     dot: (s) => ({ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: s === 'ok' ? '#a6e3a1' : s === 'error' ? '#f38ba8' : s === 'running' ? '#f9e2af' : '#585b70' }),
     runBtn: { background: 'none', border: 'none', color: '#89b4fa', cursor: 'pointer', fontSize: 12 },
