@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         nb-steprunner
-// @version      0.3.0
+// @version      0.3.1
 // @author       Afriza
 // @description  Notebook-style step runner di dalam page: tiap cell dijalankan independen (blob-module), ctx bersama, resume/checkpoint, helper selector. Editor cell di panel.
 // @match        https://GANTI-SITUS-TARGET-ANDA/*
@@ -164,10 +164,21 @@
     }
   }
 
-  // runCell menjalankan satu cell. onEvent(status, outputText) untuk update UI.
+  // `print` GLOBAL & STABIL: selalu menulis ke run yang sedang aktif (top of stack).
+  // Penting supaya fungsi yang disimpan di `lib` (didefinisikan di cell setup) tetap
+  // mengarah ke output cell yang memanggilnya, bukan ke run tempat ia didefinisikan.
+  const printStack = [];
+  function print(...a) {
+    const line = a.map(fmt).join(' ');
+    const sink = printStack[printStack.length - 1];
+    if (sink) sink(line);
+    else console.log('[nb]', line); // dipanggil di luar run (mis. dari DevTools)
+  }
+
+  // runCell menjalankan satu cell.
   async function runCell(cell) {
     const out = [];
-    const print = (...a) => out.push(a.map(fmt).join(' '));
+    printStack.push((line) => out.push(line));
     const api = { ctx, lib: ctx.lib, $, $$, sleep, gmFetch, waitFor, print };
     try {
       const fn = await compile(cell);
@@ -184,6 +195,8 @@
         (out.length ? '\n' : '') +
         '✖ ' + String(err && err.stack ? err.stack : err);
       return { ok: false, error: err, output: text };
+    } finally {
+      printStack.pop();
     }
   }
 
