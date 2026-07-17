@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         nb-steprunner
-// @version      0.3.1
+// @version      0.4.0
 // @author       Afriza
 // @description  Notebook-style step runner di dalam page: tiap cell dijalankan independen (blob-module), ctx bersama, resume/checkpoint, helper selector. Editor cell di panel.
 // @match        https://GANTI-SITUS-TARGET-ANDA/*
@@ -256,6 +256,11 @@
     const [statuses, setStatuses] = useState({}); // id -> 'idle'|'running'|'ok'|'error'
     const [outputs, setOutputs] = useState({});   // id -> string
     const [resumeId, setResumeId] = useState(null);
+    const [running, setRunning] = useState(false);
+    const [loop, setLoop] = useState(false);
+    const [delay, setDelay] = useState(500);
+    const [maxIter, setMaxIter] = useState(100);
+    const [onError, setOnError] = useState('stop'); // 'stop' | 'continue' | 'reload'
     const [visible, setVisible] = useState(true);
     const [pos, setPos] = useState({ x: 20, y: 20, w: 420, h: 480, listW: 130, outH: 130 });
     const [miniPos, setMiniPos] = useState({ x: 20, y: 80 });
@@ -265,6 +270,8 @@
     const resizeState = useRef(null);
     const miniDrag = useRef(null);
     const saveTimer = useRef(null);
+    const stopRef = useRef(false);
+    const cellsRef = useRef([]); // cells terbaru untuk dibaca di dalam loop
 
     // ---- load awal: notebook + posisi + restore checkpoint ----
     useEffect(() => {
@@ -297,6 +304,8 @@
     useEffect(() => {
       if (loaded) gmSet(KEY_MINIPOS, miniPos);
     }, [miniPos, loaded]);
+
+    useEffect(() => { cellsRef.current = cells; }, [cells]);
 
     // ---- persist notebook (debounce) ----
     const persistCells = useCallback((next) => {
@@ -346,6 +355,62 @@
       setStatuses((s) => ({ ...s, [cell.id]: res.ok ? 'ok' : 'error' }));
       setOutputs((o) => ({ ...o, [cell.id]: res.output }));
       if (res.ok && cell.kind === 'step') setResumeId(cell.id);
+      return res;
+    }
+
+    function toggleEnabled(id) {
+      mutateCells((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, enabled: c.enabled === false } : c))
+      );
+    }
+
+    function stopRun() {
+      stopRef.current = true;
+    }
+
+    // Run All: jalankan cell 'step' yang enabled, atas->bawah. Opsi loop + on-error.
+    // setup/probe/excluded dilewati. Selalu bisa dihentikan via Stop.
+    async function runSequence() {
+      if (running) return;
+      stopRef.current = false;
+      setRunning(true);
+      const maxN = Number(maxIter) || 0;        // <= 0 -> tak terbatas
+      const wait = Math.max(0, Number(delay) || 0);
+      try {
+        let iter = 0;
+        do {
+          iter++;
+          const steps = cellsRef.current.filter(
+            (c) => c.kind === 'step' && c.enabled !== false
+          );
+          for (const c of steps) {
+            if (stopRef.current) return;
+            const res = await doRun(c);
+            if (!res.ok) {
+              if (onError === 'reload') { location.reload(); return; }
+              if (onError === 'stop') return;
+              // 'continue' -> lanjut ke cell berikutnya
+            }
+          }
+          if (loop && !stopRef.current && wait) await sleep(wait);
+        } while (loop && !stopRef.current && (maxN <= 0 || iter < maxN));
+      } finally {
+        setRunning(false);
+        stopRef.current = false;
+      }
+    }
+
+    async function resetCtx() {
+      if (!confirm('Bersihkan ctx (data/refs/lib) + hapus checkpoint?')) return;
+      for (const k in ctx.data) delete ctx.data[k];
+      for (const k in ctx.refs) delete ctx.refs[k];
+      for (const k in ctx.lib) delete ctx.lib[k];
+      await checkpoint.clear();
+      setResumeId(null);
+      // Bangun ulang lib dari cell setup.
+      for (const c of cellsRef.current.filter((x) => x.kind === 'setup')) {
+        await doRun(c);
+      }
     }
 
     // Tombol minimize: bisa DIGESER (drag) supaya tak tertutup UI halaman.
@@ -453,13 +518,39 @@
           ${resumeId && html`<span style=${st.resume}>lanjut dari: ${(cells.find((c) => c.id === resumeId) || {}).name || '?'}</span>`}
         </div>
 
+        <div style=${st.controls}>
+          ${running
+            ? html`<button style=${st.stopBtn} onClick=${stopRun}>■ Stop</button>`
+            : html`<button style=${st.smallBtn} onClick=${runSequence}>▶▶ Run All</button>`}
+          <label style=${st.ctrlLabel}>
+            <input type="checkbox" checked=${loop} onChange=${(e) => setLoop(e.target.checked)} /> loop
+          </label>
+          <label style=${st.ctrlLabel}>delay
+            <input style=${st.numIn} type="number" value=${delay} onInput=${(e) => setDelay(e.target.value)} />ms
+          </label>
+          <label style=${st.ctrlLabel}>max
+            <input style=${st.numIn} type="number" value=${maxIter} onInput=${(e) => setMaxIter(e.target.value)} />
+          </label>
+          <select style=${st.sel} value=${onError} onChange=${(e) => setOnError(e.target.value)}>
+            <option value="stop">on-error: stop</option>
+            <option value="continue">on-error: continue</option>
+            <option value="reload">on-error: reload</option>
+          </select>
+          <button style=${st.resetBtn} onClick=${resetCtx}>reset ctx</button>
+        </div>
+
         <div style=${st.main}>
           <div style=${st.topArea}>
             <div style=${{ ...st.list, width: pos.listW + 'px' }}>
               ${cells.length === 0 && html`<div style=${st.empty}>Belum ada cell. Klik + Cell.</div>`}
               ${cells.map((c) => html`
-                <div key=${c.id} style=${{ ...st.cellRow, ...(c.id === selectedId ? st.cellRowActive : {}) }}
+                <div key=${c.id} style=${{ ...st.cellRow, ...(c.id === selectedId ? st.cellRowActive : {}), ...(c.kind === 'step' && c.enabled === false ? st.cellRowOff : {}) }}
                      onClick=${() => setSelectedId(c.id)}>
+                  ${c.kind === 'step'
+                    ? html`<input type="checkbox" title="ikut Run All" style=${st.chk}
+                        checked=${c.enabled !== false}
+                        onClick=${(e) => { e.stopPropagation(); toggleEnabled(c.id); }} />`
+                    : html`<span style=${st.chk}></span>`}
                   <span style=${st.dot(statuses[c.id])}></span>
                   <span style=${st.cellName}>${c.name}${c.kind !== 'step' ? ' ·' + c.kind : ''}</span>
                   <button style=${st.runBtn} onClick=${(e) => { e.stopPropagation(); doRun(c); }}>▶</button>
@@ -512,6 +603,14 @@
     host: { opacity: 0.5, fontWeight: 'normal', marginLeft: 6 },
     toolbar: { display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #313244', flex: '0 0 auto' },
     resume: { marginLeft: 'auto', fontSize: 11, color: '#f9e2af' },
+    controls: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #313244', flex: '0 0 auto', fontSize: 11 },
+    ctrlLabel: { display: 'inline-flex', alignItems: 'center', gap: 3, color: '#a6adc8' },
+    numIn: { width: 46, background: '#181825', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: 4, fontSize: 11, padding: '1px 3px' },
+    sel: { background: '#181825', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: 4, fontSize: 11 },
+    stopBtn: { background: '#f38ba8', border: 'none', color: '#11111b', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontWeight: 'bold', fontSize: 11 },
+    resetBtn: { background: 'none', border: '1px solid #45475a', color: '#f9e2af', borderRadius: 5, padding: '3px 8px', cursor: 'pointer', fontSize: 11, marginLeft: 'auto' },
+    chk: { width: 12, height: 12, flex: '0 0 auto', margin: 0 },
+    cellRowOff: { opacity: 0.4 },
     main: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 },
     topArea: { display: 'flex', flex: '1 1 auto', minHeight: 0 },
     list: { borderRight: '1px solid #313244', overflowY: 'auto', flex: '0 0 auto' },
