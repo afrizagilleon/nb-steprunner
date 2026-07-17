@@ -1,10 +1,13 @@
 // ==UserScript==
 // @name         nb-steprunner
-// @namespace    https://github.com/afriza/nb-steprunner
+// @namespace    https://github.com/afrizagilleon/nb-steprunner
 // @version      0.6.0
 // @author       Afriza
 // @description  Notebook-style step runner inside the page: independent cells (blob-module), shared ctx, resume/checkpoint, Run All/loop, import/export. Cell editor in a panel.
 // @license      MIT
+// @homepage     https://github.com/afrizagilleon/nb-steprunner
+// @downloadURL  https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner/dist/nb-steprunner.user.js
+// @updateURL    https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner/dist/nb-steprunner.user.js
 // @match        https://YOUR-TARGET-SITE/*
 // @require      https://cdn.jsdelivr.net/npm/preact@10.23.1/dist/preact.umd.js
 // @require      https://cdn.jsdelivr.net/npm/preact@10.23.1/hooks/dist/hooks.umd.js

@@ -12,7 +12,7 @@ site CSPs. The cell editor lives in a panel; sources are stored per-host in GM s
 Install in Tampermonkey. For a release (example via jsDelivr, pinned to a tag):
 
 ```
-// @require https://cdn.jsdelivr.net/gh/afriza/nb-steprunner@vX.Y.Z/dist/nb-steprunner.user.js
+// @require https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner@vX.Y.Z/dist/nb-steprunner.user.js
 ```
 
 Or install `dist/nb-steprunner.user.js` directly. **You must change `@match`** to your target site.

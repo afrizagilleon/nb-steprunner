@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      # Guard: the committed dist/ must match a fresh build of src/.
+      # If this fails, run `bun run build` locally and commit dist/.
+      - name: Verify dist is up to date
+        run: |
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ is stale — run 'bun run build' and commit the result."
+            git --no-pager diff -- dist/
+            exit 1
+          fi
+
+      - name: Upload userscript artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nb-steprunner-userscript
+          path: dist/nb-steprunner.user.js

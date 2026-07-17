@@ -9,9 +9,15 @@ export default defineConfig({
       entry: 'src/main.ts',
       userscript: {
         name: 'nb-steprunner',
-        namespace: 'https://github.com/afriza/nb-steprunner',
+        namespace: 'https://github.com/afrizagilleon/nb-steprunner',
         version: '0.6.0',
         author: 'Afriza',
+        homepage: 'https://github.com/afrizagilleon/nb-steprunner',
+        // Auto-update: Tampermonkey checks these. jsDelivr default-branch = latest build.
+        updateURL:
+          'https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner/dist/nb-steprunner.user.js',
+        downloadURL:
+          'https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner/dist/nb-steprunner.user.js',
         description:
           'Notebook-style step runner inside the page: independent cells (blob-module), shared ctx, resume/checkpoint, Run All/loop, import/export. Cell editor in a panel.',
         match: ['https://YOUR-TARGET-SITE/*'],

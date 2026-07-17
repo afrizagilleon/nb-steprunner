@@ -1,0 +1,40 @@
+name: Release
+
+# Trigger by pushing a tag, e.g. `git tag v0.7.0 && git push origin v0.7.0`.
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/nb-steprunner.user.js
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            **Direct** — download `nb-steprunner.user.js` below and install in Tampermonkey
+            (then change `@match` to your target site).
+
+            **Via @require (pinned, immutable)** — in your own wrapper userscript:
+            ```
+            // @require https://cdn.jsdelivr.net/gh/${{ github.repository }}@${{ github.ref_name }}/dist/nb-steprunner.user.js
+            ```
