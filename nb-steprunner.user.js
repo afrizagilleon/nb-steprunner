@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         nb-steprunner
-// @version      0.2.0
+// @version      0.3.0
 // @author       Afriza
 // @description  Notebook-style step runner di dalam page: tiap cell dijalankan independen (blob-module), ctx bersama, resume/checkpoint, helper selector. Editor cell di panel.
 // @match        https://GANTI-SITUS-TARGET-ANDA/*
@@ -49,6 +49,7 @@
   const KEY_NOTEBOOK = () => hostKey('notebook');
   const KEY_CHECKPOINT = () => hostKey('checkpoint');
   const KEY_PANELPOS = globalKey('panelPos');
+  const KEY_MINIPOS = globalKey('miniPos');
 
   const emptyNotebook = () => ({ version: 1, cells: [] });
 
@@ -243,11 +244,13 @@
     const [outputs, setOutputs] = useState({});   // id -> string
     const [resumeId, setResumeId] = useState(null);
     const [visible, setVisible] = useState(true);
-    const [pos, setPos] = useState({ x: 20, y: 20, w: 380, h: 460 });
+    const [pos, setPos] = useState({ x: 20, y: 20, w: 420, h: 480, listW: 130, outH: 130 });
+    const [miniPos, setMiniPos] = useState({ x: 20, y: 80 });
     const [loaded, setLoaded] = useState(false);
 
     const dragState = useRef(null);
     const resizeState = useRef(null);
+    const miniDrag = useRef(null);
     const saveTimer = useRef(null);
 
     // ---- load awal: notebook + posisi + restore checkpoint ----
@@ -257,7 +260,9 @@
         setCells(nb.cells);
         if (nb.cells[0]) setSelectedId(nb.cells[0].id);
         const savedPos = await gmGet(KEY_PANELPOS, null);
-        if (savedPos) setPos(savedPos);
+        if (savedPos) setPos((p) => ({ ...p, ...savedPos }));
+        const savedMini = await gmGet(KEY_MINIPOS, null);
+        if (savedMini) setMiniPos(savedMini);
         const cp = await checkpoint.restore();
         if (cp && cp.lastSuccessCellId) setResumeId(cp.lastSuccessCellId);
         // Auto-run cell 'setup' (mis. definisi lib) — tidak menggeser titik resume.
@@ -275,6 +280,10 @@
     useEffect(() => {
       if (loaded) gmSet(KEY_PANELPOS, pos);
     }, [pos, loaded]);
+
+    useEffect(() => {
+      if (loaded) gmSet(KEY_MINIPOS, miniPos);
+    }, [miniPos, loaded]);
 
     // ---- persist notebook (debounce) ----
     const persistCells = useCallback((next) => {
@@ -326,8 +335,29 @@
       if (res.ok && cell.kind === 'step') setResumeId(cell.id);
     }
 
+    // Tombol minimize: bisa DIGESER (drag) supaya tak tertutup UI halaman.
+    // Klik (tanpa geser) = buka panel. Geser >3px = pindah, tidak membuka.
+    const onMiniDown = (e) => {
+      miniDrag.current = { sx: e.clientX, sy: e.clientY, ox: miniPos.x, oy: miniPos.y, moved: false };
+      const move = (ev) => {
+        const d = miniDrag.current; if (!d) return;
+        if (Math.abs(ev.clientX - d.sx) > 3 || Math.abs(ev.clientY - d.sy) > 3) d.moved = true;
+        setMiniPos({ x: d.ox + ev.clientX - d.sx, y: d.oy + ev.clientY - d.sy });
+      };
+      const up = () => {
+        const d = miniDrag.current;
+        miniDrag.current = null;
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        if (d && !d.moved) setVisible(true);
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    };
+
     if (!visible) {
-      return html`<button onClick=${() => setVisible(true)} style=${st.mini}>🧪</button>`;
+      const miniStyle = { ...st.mini, left: miniPos.x + 'px', top: miniPos.y + 'px', right: 'auto' };
+      return html`<button onMouseDown=${onMiniDown} style=${miniStyle} title="klik: buka · geser: pindah">🧪</button>`;
     }
 
     // ---- drag / resize (dari nb-preact.js) ----
@@ -365,6 +395,34 @@
       document.addEventListener('mouseup', up);
     };
 
+    // Splitter vertikal: atur lebar panel cell (kiri).
+    const onListResizeStart = (e) => {
+      e.stopPropagation();
+      const sx = e.clientX, ow = pos.listW;
+      const move = (ev) =>
+        setPos((p) => ({ ...p, listW: Math.max(90, Math.min(p.w - 140, ow + ev.clientX - sx)) }));
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    };
+
+    // Splitter horizontal: atur tinggi area output (bawah). Geser ke atas = lebih tinggi.
+    const onOutResizeStart = (e) => {
+      e.stopPropagation();
+      const sy = e.clientY, oh = pos.outH;
+      const move = (ev) =>
+        setPos((p) => ({ ...p, outH: Math.max(36, Math.min(p.h - 180, oh - (ev.clientY - sy))) }));
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    };
+
     const selected = cells.find((c) => c.id === selectedId) || null;
     const panelStyle = { ...st.panel, left: pos.x + 'px', top: pos.y + 'px', width: pos.w + 'px', height: pos.h + 'px' };
 
@@ -382,38 +440,48 @@
           ${resumeId && html`<span style=${st.resume}>lanjut dari: ${(cells.find((c) => c.id === resumeId) || {}).name || '?'}</span>`}
         </div>
 
-        <div style=${st.body}>
-          <div style=${st.list}>
-            ${cells.length === 0 && html`<div style=${st.empty}>Belum ada cell. Klik + Cell.</div>`}
-            ${cells.map((c) => html`
-              <div key=${c.id} style=${{ ...st.cellRow, ...(c.id === selectedId ? st.cellRowActive : {}) }}
-                   onClick=${() => setSelectedId(c.id)}>
-                <span style=${st.dot(statuses[c.id])}></span>
-                <span style=${st.cellName}>${c.name}${c.kind !== 'step' ? ' ·' + c.kind : ''}</span>
-                <button style=${st.runBtn} onClick=${(e) => { e.stopPropagation(); doRun(c); }}>▶</button>
-              </div>
-            `)}
+        <div style=${st.main}>
+          <div style=${st.topArea}>
+            <div style=${{ ...st.list, width: pos.listW + 'px' }}>
+              ${cells.length === 0 && html`<div style=${st.empty}>Belum ada cell. Klik + Cell.</div>`}
+              ${cells.map((c) => html`
+                <div key=${c.id} style=${{ ...st.cellRow, ...(c.id === selectedId ? st.cellRowActive : {}) }}
+                     onClick=${() => setSelectedId(c.id)}>
+                  <span style=${st.dot(statuses[c.id])}></span>
+                  <span style=${st.cellName}>${c.name}${c.kind !== 'step' ? ' ·' + c.kind : ''}</span>
+                  <button style=${st.runBtn} onClick=${(e) => { e.stopPropagation(); doRun(c); }}>▶</button>
+                </div>
+              `)}
+            </div>
+
+            <div style=${st.vsplit} onMouseDown=${onListResizeStart}></div>
+
+            <div style=${st.editorPane}>
+              ${selected ? html`
+                <div style=${st.editorHead}>
+                  <span style=${st.editorTitle}>${selected.name}</span>
+                  <span>
+                    <button style=${st.linkBtn} onClick=${() => renameCell(selected.id)}>rename</button>
+                    <button style=${st.linkBtn} onClick=${() => deleteCell(selected.id)}>hapus</button>
+                  </span>
+                </div>
+                <textarea style=${st.textarea} spellcheck=${false}
+                  value=${selected.source}
+                  onInput=${(e) => updateSource(selected.id, e.target.value)}
+                  onKeyDown=${(e) => { if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); doRun(selected); } }}
+                ></textarea>
+                <div style=${st.runRow}>
+                  <button style=${st.primaryBtn} onClick=${() => doRun(selected)}>▶ Run (Ctrl+Enter)</button>
+                </div>
+              ` : html`<div style=${st.empty}>Pilih atau tambah cell.</div>`}
+            </div>
           </div>
 
-          <div style=${st.editorPane}>
-            ${selected ? html`
-              <div style=${st.editorHead}>
-                <span style=${st.editorTitle}>${selected.name}</span>
-                <span>
-                  <button style=${st.linkBtn} onClick=${() => renameCell(selected.id)}>rename</button>
-                  <button style=${st.linkBtn} onClick=${() => deleteCell(selected.id)}>hapus</button>
-                </span>
-              </div>
-              <textarea style=${st.textarea} spellcheck=${false}
-                value=${selected.source}
-                onInput=${(e) => updateSource(selected.id, e.target.value)}
-                onKeyDown=${(e) => { if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); doRun(selected); } }}
-              ></textarea>
-              <div style=${st.runRow}>
-                <button style=${st.primaryBtn} onClick=${() => doRun(selected)}>▶ Run (Ctrl+Enter)</button>
-              </div>
-              <pre style=${st.output}>${outputs[selected.id] || ''}</pre>
-            ` : html`<div style=${st.empty}>Pilih atau tambah cell.</div>`}
+          <div style=${st.hsplit} onMouseDown=${onOutResizeStart}></div>
+
+          <div style=${{ ...st.outputWrap, height: pos.outH + 'px' }}>
+            <div style=${st.outputHead}>output${selected ? ' — ' + selected.name : ''}</div>
+            <pre style=${st.output}>${selected ? (outputs[selected.id] || '') : ''}</pre>
           </div>
         </div>
 
@@ -431,8 +499,13 @@
     host: { opacity: 0.5, fontWeight: 'normal', marginLeft: 6 },
     toolbar: { display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #313244', flex: '0 0 auto' },
     resume: { marginLeft: 'auto', fontSize: 11, color: '#f9e2af' },
-    body: { display: 'flex', flex: '1 1 auto', minHeight: 0 },
-    list: { width: '38%', borderRight: '1px solid #313244', overflowY: 'auto' },
+    main: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 },
+    topArea: { display: 'flex', flex: '1 1 auto', minHeight: 0 },
+    list: { borderRight: '1px solid #313244', overflowY: 'auto', flex: '0 0 auto' },
+    vsplit: { width: 5, flex: '0 0 auto', cursor: 'col-resize', background: '#313244' },
+    hsplit: { height: 5, flex: '0 0 auto', cursor: 'row-resize', background: '#313244' },
+    outputWrap: { display: 'flex', flexDirection: 'column', flex: '0 0 auto', minHeight: 0 },
+    outputHead: { padding: '3px 8px', fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', color: '#89b4fa', background: '#181825', flex: '0 0 auto' },
     empty: { padding: 10, opacity: 0.5 },
     cellRow: { display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', cursor: 'pointer', borderBottom: '1px solid #26263a' },
     cellRowActive: { background: '#313244' },
@@ -443,8 +516,8 @@
     editorHead: { display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderBottom: '1px solid #313244' },
     editorTitle: { color: '#89b4fa' },
     textarea: { flex: '1 1 auto', resize: 'none', border: 'none', outline: 'none', background: '#181825', color: '#cdd6f4', fontFamily: 'ui-monospace, monospace', fontSize: 12, padding: 8, userSelect: 'text' },
-    runRow: { padding: '6px 8px', borderTop: '1px solid #313244' },
-    output: { margin: 0, padding: 8, maxHeight: '35%', overflow: 'auto', background: '#11111b', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderTop: '1px solid #313244', userSelect: 'text' },
+    runRow: { padding: '6px 8px', borderTop: '1px solid #313244', flex: '0 0 auto' },
+    output: { margin: 0, padding: 8, flex: '1 1 auto', overflow: 'auto', background: '#11111b', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'text' },
     iconBtn: { background: 'none', border: 'none', color: '#cdd6f4', cursor: 'pointer' },
     smallBtn: { background: '#45475a', border: 'none', color: '#cdd6f4', borderRadius: 5, padding: '3px 8px', cursor: 'pointer', fontSize: 11 },
     primaryBtn: { background: '#89b4fa', border: 'none', color: '#11111b', borderRadius: 5, padding: '4px 10px', cursor: 'pointer', fontWeight: 'bold' },
