@@ -1,1 +1,5 @@
 PLANNING.md
+.claude
+node_modules
+.vite
+*.log
