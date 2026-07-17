@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         nb-steprunner
-// @version      0.4.0
+// @version      0.5.0
 // @author       Afriza
 // @description  Notebook-style step runner di dalam page: tiap cell dijalankan independen (blob-module), ctx bersama, resume/checkpoint, helper selector. Editor cell di panel.
 // @match        https://GANTI-SITUS-TARGET-ANDA/*
@@ -56,7 +56,7 @@
   async function loadNotebook() {
     const nb = await gmGet(KEY_NOTEBOOK(), null);
     if (!nb || !Array.isArray(nb.cells)) return emptyNotebook();
-    return nb;
+    return { version: 1, cells: nb.cells.map(normalizeCell) };
   }
   async function saveNotebook(nb) {
     await gmSet(KEY_NOTEBOOK(), nb);
@@ -76,6 +76,62 @@
     probe: "// probe: bangun handle ke ctx.refs, jalankan berulang\n// ctx.refs.editor = $('.monaco-editor');\n",
     setup: "// setup: dijalankan otomatis saat load (& setelah reload).\n// Taruh fungsi reusable di lib -> dipakai cell lain lewat lib.namaFn().\nlib.hello = () => print('hai dari lib');\n",
   };
+
+  const VALID_KINDS = ['step', 'setup', 'probe'];
+  function normalizeCell(c) {
+    return {
+      id: c.id || uid(),
+      name: (c.name || 'cell').toString(),
+      source: (c.source != null ? c.source : '').toString(),
+      kind: VALID_KINDS.includes(c.kind) ? c.kind : 'step',
+      enabled: c.enabled !== false,
+    };
+  }
+
+  // Trigger unduhan file dari string (anchor sementara di light DOM).
+  function download(filename, text, type) {
+    const url = URL.createObjectURL(new Blob([text], { type: type || 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function parseNotebookJSON(text) {
+    const data = JSON.parse(text);
+    const arr = Array.isArray(data) ? data : (Array.isArray(data.cells) ? data.cells : []);
+    return arr.map(normalizeCell);
+  }
+
+  // Markdown round-trip: heading = nama, komentar meta = kind/enabled, fence js = source.
+  function buildMarkdown(cells) {
+    return cells
+      .map((c) => {
+        const meta = `<!-- nb:kind=${c.kind} enabled=${c.enabled !== false} -->`;
+        return `### ${c.name}\n${meta}\n\`\`\`js\n${c.source}\n\`\`\`\n`;
+      })
+      .join('\n');
+  }
+  function parseMarkdown(md) {
+    const cells = [];
+    const re = /^#{1,6}[ \t]+(.+?)[ \t]*\r?\n(?:<!--\s*nb:([^>]*?)-->\r?\n)?```[a-zA-Z]*\r?\n([\s\S]*?)\r?\n```/gm;
+    let m;
+    while ((m = re.exec(md)) !== null) {
+      const meta = m[2] || '';
+      const kind = (/kind=(\w+)/.exec(meta) || [])[1];
+      const enabled = (/enabled=(\w+)/.exec(meta) || [])[1];
+      cells.push(normalizeCell({
+        name: m[1].trim(),
+        source: m[3],
+        kind,
+        enabled: enabled !== 'false',
+      }));
+    }
+    return cells;
+  }
 
   // =========================================================================
   // 2. HELPERS + ctx
@@ -413,6 +469,45 @@
       }
     }
 
+    // ---- Import / Export ----
+    function exportJSON() {
+      const ts = new Date().toISOString().slice(0, 10);
+      download(`nb-${host}-${ts}.json`,
+        JSON.stringify({ version: 1, host, cells }, null, 2),
+        'application/json');
+    }
+    function exportMarkdown() {
+      const ts = new Date().toISOString().slice(0, 10);
+      download(`nb-${host}-${ts}.md`, buildMarkdown(cells), 'text/markdown');
+    }
+    function importFile() {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = '.json,.md,.txt,.markdown';
+      inp.onchange = () => {
+        const file = inp.files && inp.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const text = String(reader.result);
+            const isJson = file.name.endsWith('.json') || text.trim().startsWith('{');
+            let imported = isJson ? parseNotebookJSON(text) : parseMarkdown(text);
+            if (!imported.length) { alert('Tidak ada cell terbaca.'); return; }
+            const replace = confirm(
+              `Impor ${imported.length} cell.\n\nOK = GANTI semua cell\nCancel = TAMBAH ke bawah`
+            );
+            mutateCells((prev) => (replace ? imported : [...prev, ...imported]));
+            setSelectedId(imported[0].id);
+          } catch (e) {
+            alert('Gagal impor: ' + e.message);
+          }
+        };
+        reader.readAsText(file);
+      };
+      inp.click();
+    }
+
     // Tombol minimize: bisa DIGESER (drag) supaya tak tertutup UI halaman.
     // Klik (tanpa geser) = buka panel. Geser >3px = pindah, tidak membuka.
     const onMiniDown = (e) => {
@@ -536,6 +631,9 @@
             <option value="continue">on-error: continue</option>
             <option value="reload">on-error: reload</option>
           </select>
+          <button style=${{ ...st.ioBtn, marginLeft: 'auto' }} onClick=${exportJSON} title="Export JSON (backup)">⇩json</button>
+          <button style=${st.ioBtn} onClick=${exportMarkdown} title="Export Markdown (Obsidian)">⇩md</button>
+          <button style=${st.ioBtn} onClick=${importFile} title="Import JSON / Markdown">⇧import</button>
           <button style=${st.resetBtn} onClick=${resetCtx}>reset ctx</button>
         </div>
 
@@ -608,7 +706,8 @@
     numIn: { width: 46, background: '#181825', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: 4, fontSize: 11, padding: '1px 3px' },
     sel: { background: '#181825', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: 4, fontSize: 11 },
     stopBtn: { background: '#f38ba8', border: 'none', color: '#11111b', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontWeight: 'bold', fontSize: 11 },
-    resetBtn: { background: 'none', border: '1px solid #45475a', color: '#f9e2af', borderRadius: 5, padding: '3px 8px', cursor: 'pointer', fontSize: 11, marginLeft: 'auto' },
+    ioBtn: { background: 'none', border: '1px solid #45475a', color: '#a6adc8', borderRadius: 5, padding: '3px 6px', cursor: 'pointer', fontSize: 11 },
+    resetBtn: { background: 'none', border: '1px solid #45475a', color: '#f9e2af', borderRadius: 5, padding: '3px 8px', cursor: 'pointer', fontSize: 11 },
     chk: { width: 12, height: 12, flex: '0 0 auto', margin: 0 },
     cellRowOff: { opacity: 0.4 },
     main: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 },
