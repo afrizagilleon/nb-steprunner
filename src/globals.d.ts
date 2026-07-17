@@ -1,4 +1,4 @@
-// Deklarasi global Tampermonkey + library CDN (dimuat via @require, bukan di-bundle).
+// Tampermonkey globals + CDN libraries (loaded via @require, not bundled).
 export {};
 
 declare global {

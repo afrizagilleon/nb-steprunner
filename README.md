@@ -1,25 +1,25 @@
 # nb-steprunner
 
-Notebook-style **step runner** di dalam halaman web, sebagai userscript Tampermonkey.
-Tiap cell dijalankan independen (seperti Jupyter) dengan `ctx` bersama, resume/checkpoint
-saat error, Run All + loop untuk SPA, dan import/export (JSON & Markdown).
+A notebook-style **step runner** inside any web page, packaged as a Tampermonkey userscript.
+Each cell runs independently (like Jupyter) with a shared `ctx`, resume/checkpoint on error,
+Run All + loop for SPAs, and import/export (JSON & Markdown).
 
-Eksekusi cell memakai **blob-module import** (bukan `eval`/`new Function`) agar lolos CSP
-situs yang ketat. Editor cell ada di panel; source disimpan per-host di GM storage.
+Cells execute via **blob-module import** (not `eval`/`new Function`) so they run under strict
+site CSPs. The cell editor lives in a panel; sources are stored per-host in GM storage.
 
-## Install (pengguna)
+## Install (users)
 
-Pasang di Tampermonkey. Untuk rilis (contoh via jsDelivr, pin ke tag):
+Install in Tampermonkey. For a release (example via jsDelivr, pinned to a tag):
 
 ```
 // @require https://cdn.jsdelivr.net/gh/afriza/nb-steprunner@vX.Y.Z/dist/nb-steprunner.user.js
 ```
 
-Atau pasang langsung `dist/nb-steprunner.user.js`. **Wajib ganti `@match`** ke situs target.
+Or install `dist/nb-steprunner.user.js` directly. **You must change `@match`** to your target site.
 
-## Development (kontributor)
+## Development (contributors)
 
-Butuh [Bun](https://bun.sh).
+Requires [Bun](https://bun.sh).
 
 ```bash
 bun install          # deps
@@ -28,34 +28,34 @@ bun run build        # -> dist/nb-steprunner.user.js
 bun run typecheck    # tsc --noEmit
 ```
 
-`bun run dev` menyajikan userscript dev yang bisa dipasang di Tampermonkey dan auto-reload
-saat source berubah — tak perlu paste-ulang.
+`bun run dev` serves a dev userscript you install once in Tampermonkey; it auto-reloads when
+the source changes — no need to re-paste.
 
-## Arsitektur (`src/`)
+## Architecture (`src/`)
 
-Berlapis (analogi MVC); output tetap SATU userscript. preact/hooks/htm dari CDN (`@require`),
-tidak di-bundle.
+Layered (MVC-ish); the output stays a SINGLE userscript. preact/hooks/htm come from the CDN
+(`@require`) and are not bundled.
 
-| Lapisan | File |
+| Layer | Files |
 |---|---|
 | **Model** | `storage.ts` (GM, per-host), `kernel.ts` (compile+runCell), `ctx.ts`, `checkpoint.ts`, `io.ts` (import/export), `types.ts`, `constants.ts`, `util.ts` |
 | **Helpers** | `helpers.ts` (`$`, `$$`, `sleep`, `gmFetch`, `waitFor`, `print`) |
 | **View** | `ui/App.ts` (panel), `ui/styles.ts` |
-| **Entry** | `main.ts` (mount ke Shadow DOM) |
+| **Entry** | `main.ts` (mount into a Shadow DOM) |
 
-## Konsep cell
+## Cell concepts
 
-- **step** — langkah alur; ikut Run All; sukses menggeser titik resume + snapshot `ctx.data`.
-- **setup** — auto-run saat load; tempat mendefinisikan fungsi reusable di `ctx.lib` (`lib`).
-- **probe** — eksperimen elemen khusus (Monaco/terminal); simpan handle ke `ctx.refs`.
+- **step** — a flow step; included in Run All; success advances the resume point + snapshots `ctx.data`.
+- **setup** — auto-runs on load; the place to define reusable functions on `ctx.lib` (`lib`).
+- **probe** — experiment with special elements (Monaco/terminal); store a handle on `ctx.refs`.
 
-`ctx.data` (serializable) di-snapshot ke checkpoint & dipulihkan saat reload; `ctx.refs`/`ctx.lib`
-ephemeral (di-rebuild oleh setup/probe).
+`ctx.data` (serializable) is snapshotted to the checkpoint & restored on reload; `ctx.refs`/`ctx.lib`
+are ephemeral (rebuilt by setup/probe cells).
 
-## Keamanan
+## Security
 
-- Jangan `@require` kode-engine live dari server pihak-ketiga (supply-chain risk).
-- Distribusi via tag/commit **immutable** (jsDelivr), opsional integrity `#sha256=`.
-- Mengimpor notebook orang lain = menjalankan kode mereka di situs target. Perlakukan sebagai kode tepercaya.
+- Do not `@require` live engine code from a third-party server (supply-chain risk).
+- Distribute from an **immutable** tag/commit (jsDelivr), optionally with an `#sha256=` integrity hash.
+- Importing someone else's notebook = running their code on the target site. Treat it as trusted code.
 
-Lihat `PLANNING.md` untuk detail desain & roadmap.
+See `PLANNING.md` for design details & roadmap.

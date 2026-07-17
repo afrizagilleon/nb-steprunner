@@ -6,7 +6,7 @@ export const host = location.host;
 export const hostKey = (suffix: string) => `${SCHEMA}:${host}:${suffix}`;
 export const globalKey = (suffix: string) => `${SCHEMA}:${suffix}`;
 
-// Bungkus GM get/set supaya aman untuk varian sinkron (GM_) maupun promise (GM.).
+// Wrap GM get/set so it is safe for both the sync (GM_) and promise (GM.) variants.
 export const gmGet = async (key: string, def?: any) => await GM_getValue(key, def);
 export const gmSet = async (key: string, val: any) => await GM_setValue(key, val);
 

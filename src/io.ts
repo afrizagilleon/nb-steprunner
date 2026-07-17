@@ -12,7 +12,7 @@ export function normalizeCell(c: any): Cell {
   };
 }
 
-// Trigger unduhan file dari string (anchor sementara di light DOM).
+// Trigger a file download from a string (temporary anchor in the light DOM).
 export function download(filename: string, text: string, type?: string) {
   const url = URL.createObjectURL(new Blob([text], { type: type || 'text/plain' }));
   const a = document.createElement('a');
@@ -30,7 +30,7 @@ export function parseNotebookJSON(text: string): Cell[] {
   return arr.map(normalizeCell);
 }
 
-// Markdown round-trip: heading = nama, komentar meta = kind/enabled, fence js = source.
+// Markdown round-trip: heading = name, meta comment = kind/enabled, js fence = source.
 export function buildMarkdown(cells: Cell[]): string {
   return cells
     .map((c) => {

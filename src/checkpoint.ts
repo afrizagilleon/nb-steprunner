@@ -1,12 +1,12 @@
 import { ctx } from './ctx';
 import { loadCheckpoint, saveCheckpoint } from './storage';
 
-// Snapshot hanya ctx.data yang serializable. Node DOM ada di ctx.refs -> tak ikut.
+// Snapshot only the serializable ctx.data. DOM nodes live in ctx.refs -> excluded.
 export function safeSnapshot(data: Record<string, any>) {
   try {
     return structuredClone(data);
   } catch (_) {
-    // fallback: buang field yang tak bisa diserialisasi, jangan gagal total
+    // fallback: drop fields that cannot be serialized, do not fail entirely
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(data)) {
       try {
@@ -29,7 +29,7 @@ export const checkpoint = {
       savedAt: Date.now(),
     });
   },
-  // Dipanggil sekali saat bootstrap: pulihkan ctx.data dari checkpoint.
+  // Called once on bootstrap: restore ctx.data from the checkpoint.
   async restore() {
     const cp = await loadCheckpoint();
     if (!cp) return null;

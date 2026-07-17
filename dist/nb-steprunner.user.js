@@ -3,8 +3,9 @@
 // @namespace    https://github.com/afriza/nb-steprunner
 // @version      0.6.0
 // @author       Afriza
-// @description  Notebook-style step runner di dalam page: cell independen (blob-module), ctx bersama, resume/checkpoint, Run All/loop, import/export. Editor cell di panel.
-// @match        https://GANTI-SITUS-TARGET-ANDA/*
+// @description  Notebook-style step runner inside the page: independent cells (blob-module), shared ctx, resume/checkpoint, Run All/loop, import/export. Cell editor in a panel.
+// @license      MIT
+// @match        https://YOUR-TARGET-SITE/*
 // @require      https://cdn.jsdelivr.net/npm/preact@10.23.1/dist/preact.umd.js
 // @require      https://cdn.jsdelivr.net/npm/preact@10.23.1/hooks/dist/hooks.umd.js
 // @require      https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js
@@ -31,9 +32,9 @@
   const SCHEMA = "nb:v1";
   const VALID_KINDS = ["step", "setup", "probe"];
   const DEFAULT_SOURCE = {
-    step: "// cell baru\nprint('halaman:', document.title);\n",
-    probe: "// probe: bangun handle ke ctx.refs, jalankan berulang\n// ctx.refs.editor = $('.monaco-editor');\n",
-    setup: "// setup: dijalankan otomatis saat load (& setelah reload).\n// Taruh fungsi reusable di lib -> dipakai cell lain lewat lib.namaFn().\nlib.hello = () => print('hai dari lib');\n"
+    step: "// new cell\nprint('page:', document.title);\n",
+    probe: "// probe: build a handle into ctx.refs, run repeatedly\n// ctx.refs.editor = $('.monaco-editor');\n",
+    setup: "// setup: runs automatically on load (and after reload).\n// Put reusable functions on lib -> call them from other cells via lib.fnName().\nlib.hello = () => print('hi from lib');\n"
   };
   const CELL_HEADER = "const { ctx, lib, $, $$, sleep, gmFetch, waitFor, print } = api;\n";
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -198,7 +199,7 @@ ${c.source}
         savedAt: Date.now()
       });
     },
-    // Dipanggil sekali saat bootstrap: pulihkan ctx.data dari checkpoint.
+    // Called once on bootstrap: restore ctx.data from the checkpoint.
     async restore() {
       const cp = await loadCheckpoint();
       if (!cp) return null;
@@ -371,7 +372,7 @@ ${CELL_HEADER}${cell.source}
       mutateCells((prev) => prev.map((c) => c.id === id ? { ...c, source } : c));
     }
     function renameCell(id) {
-      const name = prompt("Nama cell:");
+      const name = prompt("Cell name:");
       if (name == null) return;
       mutateCells((prev) => prev.map((c) => c.id === id ? { ...c, name } : c));
     }
@@ -439,7 +440,7 @@ ${CELL_HEADER}${cell.source}
       }
     }
     async function resetCtx() {
-      if (!confirm("Bersihkan ctx (data/refs/lib) + hapus checkpoint?")) return;
+      if (!confirm("Clear ctx (data/refs/lib) + delete checkpoint?")) return;
       for (const k in ctx.data) delete ctx.data[k];
       for (const k in ctx.refs) delete ctx.refs[k];
       for (const k in ctx.lib) delete ctx.lib[k];
@@ -475,19 +476,19 @@ ${CELL_HEADER}${cell.source}
             const isJson = file.name.endsWith(".json") || text.trim().startsWith("{");
             let imported = isJson ? parseNotebookJSON(text) : parseMarkdown(text);
             if (!imported.length) {
-              alert("Tidak ada cell terbaca.");
+              alert("No cells parsed.");
               return;
             }
             const replace = confirm(
-              `Impor ${imported.length} cell.
+              `Import ${imported.length} cells.
 
-OK = GANTI semua cell
-Cancel = TAMBAH ke bawah`
+OK = REPLACE all cells
+Cancel = APPEND to the end`
             );
             mutateCells((prev) => replace ? imported : [...prev, ...imported]);
             setSelectedId(imported[0].id);
           } catch (e) {
-            alert("Gagal impor: " + e.message);
+            alert("Import failed: " + e.message);
           }
         };
         reader.readAsText(file);
@@ -514,7 +515,7 @@ Cancel = TAMBAH ke bawah`
     };
     if (!visible) {
       const miniStyle = { ...st.mini, left: miniPos.x + "px", top: miniPos.y + "px", right: "auto" };
-      return html`<button onMouseDown=${onMiniDown} style=${miniStyle} title="klik: buka · geser: pindah">🧪</button>`;
+      return html`<button onMouseDown=${onMiniDown} style=${miniStyle} title="click: open · drag: move">🧪</button>`;
     }
     const onDragStart = (e) => {
       dragState.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
@@ -586,7 +587,7 @@ Cancel = TAMBAH ke bawah`
         <button style=${st.smallBtn} onClick=${() => addCell("step")}>+ Cell</button>
         <button style=${st.smallBtn} onClick=${() => addCell("setup")}>+ Setup</button>
         <button style=${st.smallBtn} onClick=${() => addCell("probe")}>+ Probe</button>
-        ${resumeId && html`<span style=${st.resume}>lanjut dari: ${(cells.find((c) => c.id === resumeId) || {}).name || "?"}</span>`}
+        ${resumeId && html`<span style=${st.resume}>resume from: ${(cells.find((c) => c.id === resumeId) || {}).name || "?"}</span>`}
       </div>
 
       <div style=${st.controls}>
@@ -614,7 +615,7 @@ Cancel = TAMBAH ke bawah`
       <div style=${st.main}>
         <div style=${st.topArea}>
           <div style=${{ ...st.list, width: pos.listW + "px" }}>
-            ${cells.length === 0 && html`<div style=${st.empty}>Belum ada cell. Klik + Cell.</div>`}
+            ${cells.length === 0 && html`<div style=${st.empty}>No cells yet. Click + Cell.</div>`}
             ${cells.map((c) => html`
               <div key=${c.id}
                    draggable=${true}
@@ -641,8 +642,8 @@ Cancel = TAMBAH ke bawah`
   }}
                    style=${{ ...st.cellRow, ...c.id === selectedId ? st.cellRowActive : {}, ...c.kind === "step" && c.enabled === false ? st.cellRowOff : {}, ...dragOverId === c.id ? st.cellRowDrag : {} }}
                    onClick=${() => setSelectedId(c.id)}>
-                <span style=${st.grip} title="tarik untuk memindah urutan">⠿</span>
-                ${c.kind === "step" ? html`<input type="checkbox" title="ikut Run All" style=${st.chk}
+                <span style=${st.grip} title="drag to reorder">⠿</span>
+                ${c.kind === "step" ? html`<input type="checkbox" title="include in Run All" style=${st.chk}
                       checked=${c.enabled !== false}
                       onClick=${(e) => {
     e.stopPropagation();
@@ -666,7 +667,7 @@ Cancel = TAMBAH ke bawah`
                 <span style=${st.editorTitle}>${selected.name}</span>
                 <span>
                   <button style=${st.linkBtn} onClick=${() => renameCell(selected.id)}>rename</button>
-                  <button style=${st.linkBtn} onClick=${() => deleteCell(selected.id)}>hapus</button>
+                  <button style=${st.linkBtn} onClick=${() => deleteCell(selected.id)}>delete</button>
                 </span>
               </div>
               <textarea style=${st.textarea} spellcheck=${false}
@@ -682,7 +683,7 @@ Cancel = TAMBAH ke bawah`
               <div style=${st.runRow}>
                 <button style=${st.primaryBtn} onClick=${() => doRun(selected)}>▶ Run (Ctrl+Enter)</button>
               </div>
-            ` : html`<div style=${st.empty}>Pilih atau tambah cell.</div>`}
+            ` : html`<div style=${st.empty}>Select or add a cell.</div>`}
           </div>
         </div>
 

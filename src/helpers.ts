@@ -46,18 +46,18 @@ export function fmt(v: any): string {
   }
 }
 
-// `print` GLOBAL & STABIL: selalu menulis ke run yang sedang aktif (top of stack).
-// Penting supaya fungsi yang disimpan di `lib` (didefinisikan di cell setup) tetap
-// mengarah ke output cell yang memanggilnya, bukan ke run tempat ia didefinisikan.
+// `print` is GLOBAL & STABLE: it always writes to the currently active run (top of stack).
+// This matters so that functions stored on `lib` (defined in a setup cell) keep writing
+// to the output of the cell that calls them, not to the run where they were defined.
 export const printStack: Array<(line: string) => void> = [];
 export function print(...a: any[]) {
   const line = a.map(fmt).join(' ');
   const sink = printStack[printStack.length - 1];
   if (sink) sink(line);
-  else console.log('[nb]', line); // dipanggil di luar run (mis. dari DevTools)
+  else console.log('[nb]', line); // called outside a run (e.g. from DevTools)
 }
 
-// Ekspor helper ke window juga -> bisa dipakai dari DevTools console saat eksplorasi manual.
+// Also expose helpers on window -> usable from the DevTools console during manual exploration.
 try {
   const w = window as any;
   w.$ = $;
@@ -67,5 +67,5 @@ try {
   w.gmFetch = gmFetch;
   w.nbCtx = ctx;
 } catch (_) {
-  /* beberapa halaman freeze window; abaikan */
+  /* some pages freeze window; ignore */
 }

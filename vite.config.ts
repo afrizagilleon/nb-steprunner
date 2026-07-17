@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 import monkey from 'vite-plugin-monkey';
 
-// Bundler khusus userscript. preact/hooks/htm tetap dari CDN via @require
-// (bukan di-bundle) — perilaku identik dengan versi single-file v0.6.
+// Userscript-specific bundler. preact/hooks/htm stay on the CDN via @require
+// (not bundled) — behavior identical to the single-file v0.6.
 export default defineConfig({
   plugins: [
     monkey({
@@ -13,8 +13,8 @@ export default defineConfig({
         version: '0.6.0',
         author: 'Afriza',
         description:
-          'Notebook-style step runner di dalam page: cell independen (blob-module), ctx bersama, resume/checkpoint, Run All/loop, import/export. Editor cell di panel.',
-        match: ['https://GANTI-SITUS-TARGET-ANDA/*'],
+          'Notebook-style step runner inside the page: independent cells (blob-module), shared ctx, resume/checkpoint, Run All/loop, import/export. Cell editor in a panel.',
+        match: ['https://YOUR-TARGET-SITE/*'],
         noframes: true,
         grant: [
           'GM_setValue',

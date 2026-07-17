@@ -4,7 +4,7 @@ import { checkpoint } from './checkpoint';
 import { CELL_HEADER } from './constants';
 import type { Cell, RunResult } from './types';
 
-// CSP situs target memblok eval/new Function -> eksekusi WAJIB via blob-module import.
+// The target site's CSP blocks eval/new Function -> execution MUST go through blob-module import.
 export async function compile(cell: Cell) {
   const moduleCode =
     `export default async (api) => {\n${CELL_HEADER}${cell.source}\n};\n` +
@@ -20,7 +20,7 @@ export async function compile(cell: Cell) {
   }
 }
 
-// runCell menjalankan satu cell.
+// runCell executes a single cell.
 export async function runCell(cell: Cell): Promise<RunResult> {
   const out: string[] = [];
   printStack.push((line) => out.push(line));
@@ -30,8 +30,8 @@ export async function runCell(cell: Cell): Promise<RunResult> {
     const result = await fn(api);
     if (result !== undefined) out.push(fmt(result));
     const text = out.join('\n');
-    // Hanya cell 'step' yang menggeser titik resume + snapshot progres.
-    // 'setup'/'probe' bukan langkah alur, jadi tak mengubah checkpoint.
+    // Only 'step' cells advance the resume point + snapshot progress.
+    // 'setup'/'probe' are not flow steps, so they do not touch the checkpoint.
     if (cell.kind === 'step') await checkpoint.markSuccess(cell.id);
     return { ok: true, result, output: text };
   } catch (err: any) {

@@ -3,14 +3,14 @@ export const SCHEMA = 'nb:v1';
 export const VALID_KINDS = ['step', 'setup', 'probe'];
 
 export const DEFAULT_SOURCE: Record<string, string> = {
-  step: "// cell baru\nprint('halaman:', document.title);\n",
+  step: "// new cell\nprint('page:', document.title);\n",
   probe:
-    "// probe: bangun handle ke ctx.refs, jalankan berulang\n// ctx.refs.editor = $('.monaco-editor');\n",
+    "// probe: build a handle into ctx.refs, run repeatedly\n// ctx.refs.editor = $('.monaco-editor');\n",
   setup:
-    "// setup: dijalankan otomatis saat load (& setelah reload).\n// Taruh fungsi reusable di lib -> dipakai cell lain lewat lib.namaFn().\nlib.hello = () => print('hai dari lib');\n",
+    "// setup: runs automatically on load (and after reload).\n// Put reusable functions on lib -> call them from other cells via lib.fnName().\nlib.hello = () => print('hi from lib');\n",
 };
 
-// Header yang disuntik otomatis -> cell bisa langsung pakai `$`, `ctx`, dst
-// tanpa prefix `api.` (tetap tersedia lewat `api` bila diperlukan).
+// Header injected automatically -> a cell can use `$`, `ctx`, etc. directly
+// without the `api.` prefix (still available via `api` if needed).
 export const CELL_HEADER =
   'const { ctx, lib, $, $$, sleep, gmFetch, waitFor, print } = api;\n';

@@ -1,4 +1,4 @@
-// Akses preact/hooks/htm dari global CDN (@require). Tidak di-bundle.
+// Access preact/hooks/htm from the CDN globals (@require). Not bundled.
 const p = (window as any).preact;
 const hooks = (window as any).preactHooks;
 

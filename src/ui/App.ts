@@ -22,7 +22,7 @@ export function App() {
   const [cells, setCells] = useState([] as Cell[]);
   const [selectedId, setSelectedId] = useState(null as string | null);
   const [statuses, setStatuses] = useState({} as Record<string, string>); // id -> 'idle'|'running'|'ok'|'error'
-  const [outputs, setOutputs] = useState({} as Record<string, string>); // id -> string
+  const [outputs, setOutputs] = useState({} as Record<string, string>); // id -> text
   const [resumeId, setResumeId] = useState(null as string | null);
   const [running, setRunning] = useState(false);
   const [loop, setLoop] = useState(false);
@@ -40,10 +40,10 @@ export function App() {
   const miniDrag = useRef(null);
   const saveTimer = useRef(null);
   const stopRef = useRef(false);
-  const cellsRef = useRef([] as Cell[]); // cells terbaru untuk dibaca di dalam loop
-  const dragIdRef = useRef(null as string | null); // id cell yang sedang di-drag
+  const cellsRef = useRef([] as Cell[]); // latest cells to read inside the loop
+  const dragIdRef = useRef(null as string | null); // id of the cell being dragged
 
-  // ---- load awal: notebook + posisi + restore checkpoint ----
+  // ---- initial load: notebook + position + restore checkpoint ----
   useEffect(() => {
     (async () => {
       const nb = await loadNotebook();
@@ -55,7 +55,7 @@ export function App() {
       if (savedMini) setMiniPos(savedMini);
       const cp = await checkpoint.restore();
       if (cp && cp.lastSuccessCellId) setResumeId(cp.lastSuccessCellId);
-      // Auto-run cell 'setup' (mis. definisi lib) — tidak menggeser titik resume.
+      // Auto-run 'setup' cells (e.g. lib definitions) — does not advance the resume point.
       for (const c of nb.cells.filter((x) => x.kind === 'setup')) {
         setStatuses((s) => ({ ...s, [c.id]: 'running' }));
         const res = await runCell(c);
@@ -66,7 +66,7 @@ export function App() {
     })();
   }, []);
 
-  // ---- persist posisi ----
+  // ---- persist position ----
   useEffect(() => {
     if (loaded) gmSet(KEY_PANELPOS, pos);
   }, [pos, loaded]);
@@ -79,7 +79,7 @@ export function App() {
     cellsRef.current = cells;
   }, [cells]);
 
-  // ---- persist notebook (debounce) ----
+  // ---- persist notebook (debounced) ----
   const persistCells = useCallback((next: Cell[]) => {
     clearTimeout(saveTimer.current as any);
     saveTimer.current = setTimeout(() => {
@@ -110,7 +110,7 @@ export function App() {
     mutateCells((prev) => prev.map((c) => (c.id === id ? { ...c, source } : c)));
   }
   function renameCell(id: string) {
-    const name = prompt('Nama cell:');
+    const name = prompt('Cell name:');
     if (name == null) return;
     mutateCells((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
   }
@@ -134,7 +134,7 @@ export function App() {
     );
   }
 
-  // Reorder: pindahkan cell drag ke posisi cell target.
+  // Reorder: move the dragged cell to the target cell's position.
   function moveCell(dragId: string | null, targetId: string) {
     if (!dragId || dragId === targetId) return;
     mutateCells((prev) => {
@@ -152,13 +152,13 @@ export function App() {
     stopRef.current = true;
   }
 
-  // Run All: jalankan cell 'step' yang enabled, atas->bawah. Opsi loop + on-error.
-  // setup/probe/excluded dilewati. Selalu bisa dihentikan via Stop.
+  // Run All: run enabled 'step' cells, top to bottom. Loop + on-error options.
+  // setup/probe/excluded are skipped. Can always be halted via Stop.
   async function runSequence() {
     if (running) return;
     stopRef.current = false;
     setRunning(true);
-    const maxN = Number(maxIter) || 0; // <= 0 -> tak terbatas
+    const maxN = Number(maxIter) || 0; // <= 0 -> unlimited
     const wait = Math.max(0, Number(delay) || 0);
     try {
       let iter = 0;
@@ -176,7 +176,7 @@ export function App() {
               return;
             }
             if (onError === 'stop') return;
-            // 'continue' -> lanjut ke cell berikutnya
+            // 'continue' -> go to the next cell
           }
         }
         if (loop && !stopRef.current && wait) await sleep(wait);
@@ -188,13 +188,13 @@ export function App() {
   }
 
   async function resetCtx() {
-    if (!confirm('Bersihkan ctx (data/refs/lib) + hapus checkpoint?')) return;
+    if (!confirm('Clear ctx (data/refs/lib) + delete checkpoint?')) return;
     for (const k in ctx.data) delete ctx.data[k];
     for (const k in ctx.refs) delete ctx.refs[k];
     for (const k in ctx.lib) delete ctx.lib[k];
     await checkpoint.clear();
     setResumeId(null);
-    // Bangun ulang lib dari cell setup.
+    // Rebuild lib from setup cells.
     for (const c of cellsRef.current.filter((x) => x.kind === 'setup')) {
       await doRun(c);
     }
@@ -227,16 +227,16 @@ export function App() {
           const isJson = file.name.endsWith('.json') || text.trim().startsWith('{');
           let imported = isJson ? parseNotebookJSON(text) : parseMarkdown(text);
           if (!imported.length) {
-            alert('Tidak ada cell terbaca.');
+            alert('No cells parsed.');
             return;
           }
           const replace = confirm(
-            `Impor ${imported.length} cell.\n\nOK = GANTI semua cell\nCancel = TAMBAH ke bawah`
+            `Import ${imported.length} cells.\n\nOK = REPLACE all cells\nCancel = APPEND to the end`
           );
           mutateCells((prev) => (replace ? imported : [...prev, ...imported]));
           setSelectedId(imported[0].id);
         } catch (e: any) {
-          alert('Gagal impor: ' + e.message);
+          alert('Import failed: ' + e.message);
         }
       };
       reader.readAsText(file);
@@ -244,8 +244,8 @@ export function App() {
     inp.click();
   }
 
-  // Tombol minimize: bisa DIGESER (drag) supaya tak tertutup UI halaman.
-  // Klik (tanpa geser) = buka panel. Geser >3px = pindah, tidak membuka.
+  // Minimized button: can be DRAGGED so it is not covered by the page UI.
+  // Click (without dragging) = open the panel. Drag >3px = move, does not open.
   const onMiniDown = (e: any) => {
     miniDrag.current = { sx: e.clientX, sy: e.clientY, ox: miniPos.x, oy: miniPos.y, moved: false } as any;
     const move = (ev: any) => {
@@ -267,10 +267,10 @@ export function App() {
 
   if (!visible) {
     const miniStyle = { ...st.mini, left: miniPos.x + 'px', top: miniPos.y + 'px', right: 'auto' };
-    return html`<button onMouseDown=${onMiniDown} style=${miniStyle} title="klik: buka · geser: pindah">🧪</button>`;
+    return html`<button onMouseDown=${onMiniDown} style=${miniStyle} title="click: open · drag: move">🧪</button>`;
   }
 
-  // ---- drag / resize (dari nb-preact.js) ----
+  // ---- drag / resize (from nb-preact.js) ----
   const onDragStart = (e: any) => {
     dragState.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y } as any;
     const move = (ev: any) => {
@@ -307,7 +307,7 @@ export function App() {
     document.addEventListener('mouseup', up);
   };
 
-  // Splitter vertikal: atur lebar panel cell (kiri).
+  // Vertical splitter: adjust the width of the cell panel (left).
   const onListResizeStart = (e: any) => {
     e.stopPropagation();
     const sx = e.clientX,
@@ -322,7 +322,7 @@ export function App() {
     document.addEventListener('mouseup', up);
   };
 
-  // Splitter horizontal: atur tinggi area output (bawah). Geser ke atas = lebih tinggi.
+  // Horizontal splitter: adjust the height of the output area (bottom). Drag up = taller.
   const onOutResizeStart = (e: any) => {
     e.stopPropagation();
     const sy = e.clientY,
@@ -351,7 +351,7 @@ export function App() {
         <button style=${st.smallBtn} onClick=${() => addCell('step')}>+ Cell</button>
         <button style=${st.smallBtn} onClick=${() => addCell('setup')}>+ Setup</button>
         <button style=${st.smallBtn} onClick=${() => addCell('probe')}>+ Probe</button>
-        ${resumeId && html`<span style=${st.resume}>lanjut dari: ${(cells.find((c) => c.id === resumeId) || ({} as any)).name || '?'}</span>`}
+        ${resumeId && html`<span style=${st.resume}>resume from: ${(cells.find((c) => c.id === resumeId) || ({} as any)).name || '?'}</span>`}
       </div>
 
       <div style=${st.controls}>
@@ -381,7 +381,7 @@ export function App() {
       <div style=${st.main}>
         <div style=${st.topArea}>
           <div style=${{ ...st.list, width: pos.listW + 'px' }}>
-            ${cells.length === 0 && html`<div style=${st.empty}>Belum ada cell. Klik + Cell.</div>`}
+            ${cells.length === 0 && html`<div style=${st.empty}>No cells yet. Click + Cell.</div>`}
             ${cells.map((c) => html`
               <div key=${c.id}
                    draggable=${true}
@@ -392,9 +392,9 @@ export function App() {
                    onDragEnd=${() => { setDragOverId(null); dragIdRef.current = null; }}
                    style=${{ ...st.cellRow, ...(c.id === selectedId ? st.cellRowActive : {}), ...(c.kind === 'step' && c.enabled === false ? st.cellRowOff : {}), ...(dragOverId === c.id ? st.cellRowDrag : {}) }}
                    onClick=${() => setSelectedId(c.id)}>
-                <span style=${st.grip} title="tarik untuk memindah urutan">⠿</span>
+                <span style=${st.grip} title="drag to reorder">⠿</span>
                 ${c.kind === 'step'
-                  ? html`<input type="checkbox" title="ikut Run All" style=${st.chk}
+                  ? html`<input type="checkbox" title="include in Run All" style=${st.chk}
                       checked=${c.enabled !== false}
                       onClick=${(e: any) => { e.stopPropagation(); toggleEnabled(c.id); }} />`
                   : html`<span style=${st.chk}></span>`}
@@ -413,7 +413,7 @@ export function App() {
                 <span style=${st.editorTitle}>${selected.name}</span>
                 <span>
                   <button style=${st.linkBtn} onClick=${() => renameCell(selected.id)}>rename</button>
-                  <button style=${st.linkBtn} onClick=${() => deleteCell(selected.id)}>hapus</button>
+                  <button style=${st.linkBtn} onClick=${() => deleteCell(selected.id)}>delete</button>
                 </span>
               </div>
               <textarea style=${st.textarea} spellcheck=${false}
@@ -424,7 +424,7 @@ export function App() {
               <div style=${st.runRow}>
                 <button style=${st.primaryBtn} onClick=${() => doRun(selected)}>▶ Run (Ctrl+Enter)</button>
               </div>
-            ` : html`<div style=${st.empty}>Pilih atau tambah cell.</div>`}
+            ` : html`<div style=${st.empty}>Select or add a cell.</div>`}
           </div>
         </div>
 
