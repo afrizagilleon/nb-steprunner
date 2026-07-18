@@ -31,7 +31,7 @@ export const st: any = {
   editorPane: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
   editorHead: { display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderBottom: '1px solid #313244' },
   editorTitle: { color: '#89b4fa' },
-  textarea: { flex: '1 1 auto', resize: 'none', border: 'none', outline: 'none', background: '#181825', color: '#cdd6f4', fontFamily: 'ui-monospace, monospace', fontSize: 12, padding: 8, userSelect: 'text' },
+  editorHost: { flex: '1 1 auto', minHeight: 0, overflow: 'hidden', background: '#282c34', userSelect: 'text' },
   runRow: { padding: '6px 8px', borderTop: '1px solid #313244', flex: '0 0 auto' },
   output: { margin: 0, padding: 8, flex: '1 1 auto', overflow: 'auto', background: '#11111b', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'text' },
   iconBtn: { background: 'none', border: 'none', color: '#cdd6f4', cursor: 'pointer' },

@@ -45,6 +45,7 @@ It runs as a single Tampermonkey userscript. Cells execute through **blob-module
 - **Shared `ctx`** — pass data between cells like a Jupyter kernel; it persists between runs.
 - **Resume / checkpoint** — on error the run stops *safely*; `ctx.data` is snapshotted and restored after a reload so you continue from the last successful step, not from zero.
 - **Run All + Loop** — run enabled steps top-to-bottom, optionally looping (with delay, max-iterations, and a `stop` / `continue` / `reload` on-error policy) — built for long-running SPA automation.
+- **Real code editor** — CodeMirror 6 with JavaScript syntax highlighting, proper Tab indentation, bracket matching, and Ctrl/Cmd+Enter to run.
 - **Selector helpers** — `$`, `$$`, `sleep`, `waitFor`, `gmFetch`, `print` are injected into every cell (and exposed on `window` for the DevTools console).
 - **Reusable library** — define helpers once in a `setup` cell (auto-run on load) and call them from any cell via `lib`.
 - **Special-element probes** — dedicated `probe` cells for editors/terminals you need to poke repeatedly.
@@ -165,7 +166,7 @@ loaded from the CDN via `@require` and are not bundled.
 |---|---|
 | **Model** | `storage.ts` (GM, per-host), `kernel.ts` (compile + runCell), `ctx.ts`, `checkpoint.ts`, `io.ts`, `types.ts`, `constants.ts`, `util.ts` |
 | **Helpers** | `helpers.ts` |
-| **View** | `ui/App.ts`, `ui/styles.ts` |
+| **View** | `ui/App.ts`, `ui/editor.ts` (CodeMirror 6), `ui/styles.ts` |
 | **Entry** | `main.ts` (mounts into a Shadow DOM) |
 
 ## Security

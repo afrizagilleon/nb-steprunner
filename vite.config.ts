@@ -4,13 +4,15 @@ import monkey from 'vite-plugin-monkey';
 // Userscript-specific bundler. preact/hooks/htm stay on the CDN via @require
 // (not bundled) — behavior identical to the single-file v0.6.
 export default defineConfig({
+  // Minify the bundle — CodeMirror makes the unminified output large (~1MB).
+  build: { minify: 'esbuild' },
   plugins: [
     monkey({
       entry: 'src/main.ts',
       userscript: {
         name: 'nb-steprunner',
         namespace: 'https://github.com/afrizagilleon/nb-steprunner',
-        version: '0.6.0',
+        version: '0.7.0',
         author: 'Afriza',
         homepage: 'https://github.com/afrizagilleon/nb-steprunner',
         // Auto-update: Tampermonkey checks these. jsDelivr default-branch = latest build.

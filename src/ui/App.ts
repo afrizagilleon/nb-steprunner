@@ -16,6 +16,7 @@ import { checkpoint } from '../checkpoint';
 import { ctx } from '../ctx';
 import { sleep } from '../helpers';
 import { st } from './styles';
+import { createEditor, type EditorHandle } from './editor';
 import type { Cell } from '../types';
 
 export function App() {
@@ -42,6 +43,10 @@ export function App() {
   const stopRef = useRef(false);
   const cellsRef = useRef([] as Cell[]); // latest cells to read inside the loop
   const dragIdRef = useRef(null as string | null); // id of the cell being dragged
+  const editorHostRef = useRef(null as HTMLElement | null); // CodeMirror mount point
+  const editorRef = useRef(null as EditorHandle | null); // live CodeMirror handle
+  const updateSourceRef = useRef((_id: string, _src: string) => {}); // latest updateSource
+  const runCurrentRef = useRef(() => {}); // run the currently edited cell (latest source)
 
   // ---- initial load: notebook + position + restore checkpoint ----
   useEffect(() => {
@@ -78,6 +83,24 @@ export function App() {
   useEffect(() => {
     cellsRef.current = cells;
   }, [cells]);
+
+  // ---- CodeMirror lifecycle: (re)create the editor when the selected cell changes ----
+  useEffect(() => {
+    const hostEl = editorHostRef.current;
+    if (!hostEl || !selectedId) return;
+    const cell = cellsRef.current.find((c) => c.id === selectedId);
+    const handle = createEditor({
+      parent: hostEl,
+      doc: cell ? cell.source : '',
+      onChange: (doc) => updateSourceRef.current(selectedId, doc),
+      onRun: () => runCurrentRef.current(),
+    });
+    editorRef.current = handle;
+    return () => {
+      handle.destroy();
+      editorRef.current = null;
+    };
+  }, [selectedId]);
 
   // ---- persist notebook (debounced) ----
   const persistCells = useCallback((next: Cell[]) => {
@@ -338,6 +361,15 @@ export function App() {
   };
 
   const selected = cells.find((c) => c.id === selectedId) || null;
+
+  // Keep the CodeMirror callbacks pointing at the latest state each render.
+  updateSourceRef.current = updateSource;
+  runCurrentRef.current = () => {
+    if (!selected) return;
+    const src = editorRef.current ? editorRef.current.getDoc() : selected.source;
+    doRun({ ...selected, source: src });
+  };
+
   const panelStyle = { ...st.panel, left: pos.x + 'px', top: pos.y + 'px', width: pos.w + 'px', height: pos.h + 'px' };
 
   return html`
@@ -416,13 +448,9 @@ export function App() {
                   <button style=${st.linkBtn} onClick=${() => deleteCell(selected.id)}>delete</button>
                 </span>
               </div>
-              <textarea style=${st.textarea} spellcheck=${false}
-                value=${selected.source}
-                onInput=${(e: any) => updateSource(selected.id, e.target.value)}
-                onKeyDown=${(e: any) => { if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); doRun(selected); } }}
-              ></textarea>
+              <div style=${st.editorHost} ref=${editorHostRef}></div>
               <div style=${st.runRow}>
-                <button style=${st.primaryBtn} onClick=${() => doRun(selected)}>▶ Run (Ctrl+Enter)</button>
+                <button style=${st.primaryBtn} onClick=${() => runCurrentRef.current()}>▶ Run (Ctrl+Enter)</button>
               </div>
             ` : html`<div style=${st.empty}>Select or add a cell.</div>`}
           </div>
