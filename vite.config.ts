@@ -22,8 +22,15 @@ export default defineConfig({
           'https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner/dist/nb-steprunner.user.js',
         description:
           'Notebook-style step runner inside the page: independent cells (blob-module), shared ctx, resume/checkpoint, Run All/loop, import/export. Cell editor in a panel.',
-        match: ['https://YOUR-TARGET-SITE/*'],
-        noframes: true,
+        match: [
+          'https://YOUR-TARGET-SITE/*',
+          // An iframe is a separate document with its own URL. To reach a CROSS-ORIGIN
+          // iframe, its origin must be matched here too — that is what lets Tampermonkey
+          // inject the frame agent into it. Example:
+          //   'https://*.services.example.com/*'
+        ],
+        // No @noframes: the script must be injected into iframes as well. main.ts mounts
+        // the panel only in the top frame; iframes run the headless agent.
         grant: [
           'GM_setValue',
           'GM_getValue',

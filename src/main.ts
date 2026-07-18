@@ -1,5 +1,6 @@
 import { html, render } from './preact';
 import { App } from './ui/App';
+import { startFrameAgent } from './frame-agent';
 
 function mount() {
   const hostEl = document.createElement('div');
@@ -22,4 +23,10 @@ function mount() {
   render(html`<${App} />`, shadow);
 }
 
-mount();
+// The script is injected into every matching frame. Only the top frame gets the panel;
+// inside an iframe we run headless so the top frame can reach across the origin boundary.
+if (window.top === window.self) {
+  mount();
+} else {
+  startFrameAgent();
+}

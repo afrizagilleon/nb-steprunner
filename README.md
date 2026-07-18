@@ -33,6 +33,7 @@ It runs as a single Tampermonkey userscript. Cells execute through **blob-module
 - [Quick start](#quick-start)
 - [Cell types](#cell-types)
 - [Helpers &amp; `ctx`](#helpers--ctx)
+- [Working across iframes](#working-across-iframes)
 - [Import / Export](#import--export)
 - [Development](#development)
 - [Architecture](#architecture)
@@ -137,6 +138,60 @@ const res = await gmFetch('https://api.example.com/data', {
 print(res.status, res.response);
 ```
 
+## Working across iframes
+
+An `<iframe>` is a separate document, and for a cross-origin one the browser blocks DOM
+access outright — that limit comes from the same-origin policy, not from Tampermonkey.
+What a userscript *can* do, and page JavaScript cannot, is run **inside** that frame:
+Tampermonkey injects into every frame whose URL matches, so the panel (top frame) and a
+headless **frame agent** (each iframe) talk over `postMessage`.
+
+> **Add the iframe's origin to `@match`.** This is the step people miss. If the frame is on
+> another domain and that domain is not matched, no agent is injected and `frames.run` will
+> time out. `@noframes` must stay off.
+
+| Call | Description |
+|---|---|
+| `frames.list()` | Inventory: `{ index, src, id, sameOrigin, ready }`. |
+| `frames.doc(t)` | The frame's `Document` — same-origin only, `null` otherwise. |
+| `frames.ready(t)` | Wait until a cross-origin frame's agent answers. |
+| `frames.run(t, fn, args?)` | Run code in the frame and return its result. |
+
+`t` is an index, a CSS selector for the iframe, or the element itself. `frames.run` works
+for both cases — same-origin runs locally, cross-origin ships the code to the agent.
+
+Two rules follow from the code being **stringified and re-parsed** in the other frame:
+it cannot capture variables from the calling cell (pass them via `args`), and the return
+value must be structured-cloneable (a DOM node cannot travel — return data about it).
+Inside the frame you get `doc`, `win`, `args`, `$`, `$$`, `sleep`, `waitFor`, `print`;
+`print` output is forwarded to the calling cell's output pane.
+
+```js
+// Paste into an xterm.js terminal living in a cross-origin iframe.
+// The synthetic ClipboardEvent never touches the system clipboard, so it sidesteps
+// the permission/focus rules that make navigator.clipboard unreliable in frames.
+await frames.run('iframe#embedded-resource', (text) => {
+  const ta = doc.querySelector('.xterm-helper-textarea');
+  if (!ta) throw new Error('terminal not rendered yet');
+  ta.focus();
+  const ev = new ClipboardEvent('paste', {
+    clipboardData: new DataTransfer(), bubbles: true, cancelable: true,
+  });
+  ev.clipboardData.setData('text/plain', text);
+  ta.dispatchEvent(ev);
+  return 'pasted';
+}, 'ls -la\n');
+
+// Read the terminal back — return the text, don't try to return nodes.
+const screen = await frames.run('iframe#embedded-resource', () =>
+  $$('.xterm-accessibility-tree [role="listitem"]')
+    .map((n) => n.innerText.replace(/\u00a0/g, " "))
+    .join('\n')
+    .trimEnd()
+);
+print(screen);
+```
+
 ## Import / Export
 
 - **⇩json** — export the current host's notebook for backup or moving between machines.
@@ -180,10 +235,10 @@ loaded from the CDN via `@require` and are not bundled.
 
 | Layer | Files |
 |---|---|
-| **Model** | `storage.ts` (GM, per-host), `kernel.ts` (compile + runCell), `ctx.ts`, `checkpoint.ts`, `io.ts`, `types.ts`, `constants.ts`, `util.ts` |
-| **Helpers** | `helpers.ts` |
-| **View** | `ui/App.ts`, `ui/editor.ts` (CodeMirror 6), `ui/styles.ts` |
-| **Entry** | `main.ts` (mounts into a Shadow DOM) |
+| **Model** | `storage.ts` (GM, per-host), `kernel.ts` (runCell), `compile.ts` (blob-module), `ctx.ts`, `checkpoint.ts`, `io.ts`, `types.ts`, `constants.ts`, `util.ts` |
+| **Helpers** | `helpers.ts`, `frames.ts` (top-frame side), `frame-agent.ts` (in-frame side), `frame-rpc.ts` (protocol) |
+| **View** | `ui/App.ts`, `ui/editor.ts` (CodeMirror 6), `ui/styles.ts`, `ui/layout.ts` (position clamping) |
+| **Entry** | `main.ts` — panel in a Shadow DOM (top frame) or headless agent (iframes) |
 
 ## Security
 
@@ -191,6 +246,9 @@ loaded from the CDN via `@require` and are not bundled.
   arbitrary code with GM privileges on every matched site (supply-chain risk).
 - Distribute from an **immutable** tag/commit (jsDelivr), optionally with an `#sha256=` integrity hash.
 - Importing someone else's notebook means running their code on the target site. Treat notebooks as trusted code.
+- The frame agent executes only code posted by `window.top` — its own top frame. Widening
+  `@match` to reach an iframe also injects the agent into every other page on that origin,
+  so keep the match patterns as narrow as the frame you actually need.
 
 ## Background — why this exists
 
