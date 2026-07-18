@@ -17,6 +17,7 @@ import { ctx } from '../ctx';
 import { sleep } from '../helpers';
 import { st } from './styles';
 import { createEditor, type EditorHandle } from './editor';
+import { clampPanel, clampMini, DEFAULT_PANEL, DEFAULT_MINI } from './layout';
 import type { Cell } from '../types';
 
 export function App() {
@@ -32,8 +33,8 @@ export function App() {
   const [onError, setOnError] = useState('stop'); // 'stop' | 'continue' | 'reload'
   const [dragOverId, setDragOverId] = useState(null as string | null);
   const [visible, setVisible] = useState(true);
-  const [pos, setPos] = useState({ x: 20, y: 20, w: 420, h: 480, listW: 130, outH: 130 } as any);
-  const [miniPos, setMiniPos] = useState({ x: 20, y: 80 } as any);
+  const [pos, setPos] = useState({ ...DEFAULT_PANEL } as any);
+  const [miniPos, setMiniPos] = useState({ ...DEFAULT_MINI } as any);
   const [loaded, setLoaded] = useState(false);
 
   const dragState = useRef(null);
@@ -54,10 +55,12 @@ export function App() {
       const nb = await loadNotebook();
       setCells(nb.cells);
       if (nb.cells[0]) setSelectedId(nb.cells[0].id);
+      // Clamp on load: a position saved on a bigger screen (or a stale off-screen one)
+      // must not leave the panel unreachable here.
       const savedPos = await gmGet(KEY_PANELPOS, null);
-      if (savedPos) setPos((p: any) => ({ ...p, ...savedPos }));
+      setPos((p: any) => clampPanel({ ...p, ...(savedPos || {}) }));
       const savedMini = await gmGet(KEY_MINIPOS, null);
-      if (savedMini) setMiniPos(savedMini);
+      setMiniPos((m: any) => clampMini({ ...m, ...(savedMini || {}) }));
       const cp = await checkpoint.restore();
       if (cp && cp.lastSuccessCellId) setResumeId(cp.lastSuccessCellId);
       // Auto-run 'setup' cells (e.g. lib definitions) — does not advance the resume point.
@@ -83,6 +86,37 @@ export function App() {
   useEffect(() => {
     cellsRef.current = cells;
   }, [cells]);
+
+  // ---- recovery: re-clamp on viewport change + a panic escape hatch ----
+  // Reset the panel to its default spot, restore it if minimized, and bring it back
+  // in reach. Available as Ctrl+Alt+0 and as window.nbResetLayout() from the console.
+  const resetLayout = useCallback(() => {
+    setPos((p: any) => clampPanel({ ...p, ...DEFAULT_PANEL }));
+    setMiniPos(clampMini(DEFAULT_MINI));
+    setVisible(true);
+  }, []);
+
+  useEffect(() => {
+    // Resizing the window (or moving to a smaller screen) can strand a saved position.
+    const onResize = () => {
+      setPos((p: any) => clampPanel(p));
+      setMiniPos((m: any) => clampMini(m));
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && (e.key === '0' || e.code === 'Digit0')) {
+        e.preventDefault();
+        resetLayout();
+      }
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('keydown', onKey, true);
+    (window as any).nbResetLayout = resetLayout;
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('keydown', onKey, true);
+      delete (window as any).nbResetLayout;
+    };
+  }, [resetLayout]);
 
   // ---- CodeMirror lifecycle: (re)create the editor when the selected cell changes ----
   useEffect(() => {
@@ -275,7 +309,7 @@ export function App() {
       const d: any = miniDrag.current;
       if (!d) return;
       if (Math.abs(ev.clientX - d.sx) > 3 || Math.abs(ev.clientY - d.sy) > 3) d.moved = true;
-      setMiniPos({ x: d.ox + ev.clientX - d.sx, y: d.oy + ev.clientY - d.sy });
+      setMiniPos(clampMini({ x: d.ox + ev.clientX - d.sx, y: d.oy + ev.clientY - d.sy }));
     };
     const up = () => {
       const d: any = miniDrag.current;
@@ -299,7 +333,7 @@ export function App() {
     const move = (ev: any) => {
       const d: any = dragState.current;
       if (!d) return;
-      setPos((p: any) => ({ ...p, x: d.ox + ev.clientX - d.sx, y: d.oy + ev.clientY - d.sy }));
+      setPos((p: any) => clampPanel({ ...p, x: d.ox + ev.clientX - d.sx, y: d.oy + ev.clientY - d.sy }));
     };
     const up = () => {
       dragState.current = null;
@@ -315,11 +349,13 @@ export function App() {
     const move = (ev: any) => {
       const r: any = resizeState.current;
       if (!r) return;
-      setPos((p: any) => ({
-        ...p,
-        w: Math.max(300, r.ow + ev.clientX - r.sx),
-        h: Math.max(240, r.oh + ev.clientY - r.sy),
-      }));
+      setPos((p: any) =>
+        clampPanel({
+          ...p,
+          w: r.ow + ev.clientX - r.sx,
+          h: r.oh + ev.clientY - r.sy,
+        })
+      );
     };
     const up = () => {
       resizeState.current = null;
@@ -336,7 +372,7 @@ export function App() {
     const sx = e.clientX,
       ow = pos.listW;
     const move = (ev: any) =>
-      setPos((p: any) => ({ ...p, listW: Math.max(90, Math.min(p.w - 140, ow + ev.clientX - sx)) }));
+      setPos((p: any) => clampPanel({ ...p, listW: ow + ev.clientX - sx }));
     const up = () => {
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
@@ -351,7 +387,7 @@ export function App() {
     const sy = e.clientY,
       oh = pos.outH;
     const move = (ev: any) =>
-      setPos((p: any) => ({ ...p, outH: Math.max(36, Math.min(p.h - 180, oh - (ev.clientY - sy))) }));
+      setPos((p: any) => clampPanel({ ...p, outH: oh - (ev.clientY - sy) }));
     const up = () => {
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
@@ -376,7 +412,10 @@ export function App() {
     <div style=${panelStyle}>
       <div style=${st.header} onMouseDown=${onDragStart}>
         <span>🧪 nb-steprunner <small style=${st.host}>${host}</small></span>
-        <button onClick=${() => setVisible(false)} style=${st.iconBtn}>✕</button>
+        <span onMouseDown=${(e: any) => e.stopPropagation()}>
+          <button onClick=${resetLayout} style=${st.iconBtn} title="Reset panel position & size (Ctrl+Alt+0)">⤢</button>
+          <button onClick=${() => setVisible(false)} style=${st.iconBtn}>✕</button>
+        </span>
       </div>
 
       <div style=${st.toolbar}>
