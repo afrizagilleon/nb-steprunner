@@ -159,6 +159,6 @@ Cancel = APPEND to the end`);qe(Zi=>$e?te:[...Zi,...te]),i(te[0].id);}catch(E){a
 
       <div style=${D.resizeHandle} onMouseDown=${od}></div>
     </div>
-  `}function Fb(){const n=document.createElement("div");n.id="nb-steprunner-host";const e=n.attachShadow({mode:"open"});document.body.appendChild(n),cd(Ve`<${Hb} />`,e);}Fb();
+  `}function Fb(){const n=document.createElement("div");n.id="nb-steprunner-host";const e=i=>i.stopPropagation();for(const i of ["keydown","keyup","keypress"])n.addEventListener(i,e);const t=n.attachShadow({mode:"open"});document.body.appendChild(n),cd(Ve`<${Hb} />`,t);}Fb();
 
 })();
