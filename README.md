@@ -157,6 +157,22 @@ bun run typecheck    # tsc --noEmit
 
 `bun run dev` serves a dev userscript you install once; it hot-reloads as you edit — no re-pasting.
 
+### Developing on strict-CSP / Trusted Types sites
+
+HMR (`bun run dev`) injects an external `<script>` for the dev client. Sites that enforce
+**Trusted Types** (`require-trusted-types-for 'script'`) block that injection, so the panel
+won't load in dev mode there. The production build is unaffected (cells run via blob-module import).
+
+Two workarounds:
+
+- **Iterate on a permissive page**, then verify the build on the real target. The panel and logic
+  are site-agnostic, so `bun run dev` on any non-Trusted-Types page is fine for UI/logic work.
+- **`bun run build:watch`** — rebuild `dist/` on every save and reinstall it in Tampermonkey.
+
+> The Tampermonkey editor may show many ESLint warnings (`no-sequences`, `no-multi-spaces`,
+> `no-redeclare`, …) on the **minified** `dist/`. These are cosmetic linter noise on bundled code,
+> not errors — the script runs fine. Disable them in Tampermonkey → Settings → Editor if they bother you.
+
 ## Architecture
 
 Layered (MVC-ish); the output stays a **single** userscript. preact / preact hooks / htm are
