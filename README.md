@@ -33,6 +33,7 @@ It runs as a single Tampermonkey userscript. Cells execute through **blob-module
 - [Quick start](#quick-start)
 - [Cell types](#cell-types)
 - [Helpers &amp; `ctx`](#helpers--ctx)
+- [Sharing state across tabs and sites](#sharing-state-across-tabs-and-sites)
 - [Working across iframes](#working-across-iframes)
 - [Import / Export](#import--export)
 - [Development](#development)
@@ -119,6 +120,10 @@ so the engine line is the only `@require` you need:
 | **setup** | Runs automatically on load (and after reload). Define reusable functions on `lib`. Never touches the checkpoint. |
 | **probe** | Experiment with tricky elements (Monaco, xterm, contenteditable). Store handles on `ctx.refs`; excluded from Run All. |
 
+> "Probe" is not an abbreviation — it is the instrument sense of the word: a cell you poke a
+> stubborn element with, repeatedly, until you understand how it responds. Probes stay out of
+> Run All precisely because they are for exploring, not for the flow.
+
 ## Helpers & `ctx`
 
 Injected into every cell:
@@ -132,11 +137,22 @@ Injected into every cell:
 | `gmFetch(url, opts)` | Promise wrapper over `GM_xmlhttpRequest` (cross-origin needs `@connect`). |
 | `print(...args)` | Write to the cell's output pane. |
 
-The shared `ctx` has three zones:
+The shared `ctx` has four zones. They behave identically while a cell runs — the difference
+is **what survives, and how far**:
 
-- **`ctx.data`** — serializable state; snapshotted to the checkpoint and restored on reload.
-- **`ctx.refs`** — ephemeral handles (DOM nodes, editor instances); rebuilt by probes.
-- **`ctx.lib`** (`lib`) — reusable functions, defined in `setup` cells.
+| Zone | Survives a reload? | Visible to other tabs / sites? | For |
+|---|---|---|---|
+| `ctx.data` | ✅ snapshotted to the checkpoint | ❌ | Serializable progress state |
+| `ctx.refs` | ❌ dropped | ❌ | DOM nodes, editor/terminal handles |
+| `ctx.lib` (`lib`) | ❌ rebuilt by `setup` cells | ❌ | Reusable functions |
+| `ctx.shared` (`shared`) | ✅ persisted in GM storage | ✅ **everywhere** | Cross-tab handoff |
+
+`data` vs `refs` is not about how you write code — both are plain objects you can use from
+any cell. It is about the checkpoint: only `ctx.data` is snapshotted. A DOM node cannot be
+serialized, and would point at a destroyed element after a reload anyway, so live handles
+belong in `refs` where they are deliberately discarded. Putting them in `data` isn't fatal
+(the snapshot skips what it cannot clone) but it makes checkpoints bigger and hides the
+intent.
 
 ```js
 // gmFetch example (declare `// @connect api.example.com` in the userscript)
@@ -147,6 +163,53 @@ const res = await gmFetch('https://api.example.com/data', {
 });
 print(res.status, res.response);
 ```
+
+## Sharing state across tabs and sites
+
+GM storage belongs to the **userscript**, not to a page — so every tab running this script
+reads and writes the same store, whatever site it is on. `ctx.shared` (`shared` in a cell)
+exposes that as an async key/value store, which is how a tab on site A hands data to a tab
+on site B.
+
+| Call | Description |
+|---|---|
+| `await shared.set(k, v)` | Write a value (structured-cloneable). |
+| `await shared.get(k, def?)` | Read a value. |
+| `await shared.wait(k, { timeout, interval })` | Block until a key is set — by any tab. Honours **Stop**. |
+| `await shared.delete(k)` / `clear()` | Remove one key / all keys. |
+| `await shared.keys()` / `all()` | List keys / everything with provenance. |
+| `await shared.meta(k)` | Which host wrote the key, and when. |
+| `shared.onChange(cb)` | Live changes; returns an unsubscribe function. |
+
+Each key is its own storage entry, so two tabs writing **different** keys never clobber each
+other. Two tabs writing the **same** key is still last-write-wins.
+
+```js
+// Tab on site A — produce
+await shared.set('jobId', ctx.data.id);
+
+// Tab on site B — consume (blocks until A writes it)
+const jobId = await shared.wait('jobId', { timeout: 120000 });
+print('got', jobId, 'from', (await shared.meta('jobId')).host);
+
+// React live instead of blocking
+shared.onChange((key, value, info) => {
+  if (info.remote) print(`${key} = ${value} (from ${info.from})`);
+});
+```
+
+> **Read this before putting anything sensitive in `shared`.** The store is not partitioned
+> by site: **every** site in your `@match` can read **everything** in it, and so can any
+> notebook you import and run. It is written to disk unencrypted by the userscript manager.
+> Values carry a `host` tag so you can audit where they came from (`shared.all()`), and the
+> first write logs a warning to the console. Keep credentials and tokens out of it unless you
+> trust every matched site — a token from site A is readable by a cell running on site B.
+>
+> Both requirements are the same one: for a tab to participate, its site must be in `@match`,
+> which also means the script (with GM privileges) runs there. Keep match patterns narrow.
+
+For managers without `GM_addValueChangeListener`, `onChange` stays silent but `get`/`set`/
+`wait` still work — `shared.live` tells you which you have.
 
 ## Working across iframes
 

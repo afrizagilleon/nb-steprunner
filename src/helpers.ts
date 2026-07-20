@@ -1,4 +1,6 @@
-import { ctx } from './ctx';
+// NOTE: this module must stay a leaf — do not import ctx here. ctx imports shared, and
+// shared imports this file; pulling ctx back in would close the cycle and leave `ctx` in
+// its temporal dead zone while this module's top-level code runs.
 
 // Thrown when the active run is stopped. Recognised by name so it survives the blob-module
 // boundary (instanceof would not — the class identity differs across realms).
@@ -109,7 +111,6 @@ try {
   w.sleep = sleep;
   w.waitFor = waitFor;
   w.gmFetch = gmFetch;
-  w.nbCtx = ctx;
 } catch (_) {
   /* some pages freeze window; ignore */
 }

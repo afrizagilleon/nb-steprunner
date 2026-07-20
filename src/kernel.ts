@@ -17,7 +17,19 @@ export async function runCell(cell: Cell, signal?: AbortSignal): Promise<RunResu
   const out: string[] = [];
   printStack.push((line) => out.push(line));
   signalStack.push(signal);
-  const api = { ctx, lib: ctx.lib, $, $$, sleep, gmFetch, waitFor, print, frames, signal };
+  const api = {
+    ctx,
+    lib: ctx.lib,
+    shared: ctx.shared,
+    $,
+    $$,
+    sleep,
+    gmFetch,
+    waitFor,
+    print,
+    frames,
+    signal,
+  };
   try {
     const fn = await compile(cell);
     const result = await fn(api);

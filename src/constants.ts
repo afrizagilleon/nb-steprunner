@@ -13,7 +13,7 @@ export const DEFAULT_SOURCE: Record<string, string> = {
 // Header injected automatically -> a cell can use `$`, `ctx`, etc. directly
 // without the `api.` prefix (still available via `api` if needed).
 export const CELL_HEADER =
-  'const { ctx, lib, $, $$, sleep, gmFetch, waitFor, print, frames } = api;\n';
+  'const { ctx, lib, shared, $, $$, sleep, gmFetch, waitFor, print, frames } = api;\n';
 
 // Header injected into code shipped to another frame. `frames` is deliberately absent:
 // a frame agent talks only to the top frame, it does not chain further.

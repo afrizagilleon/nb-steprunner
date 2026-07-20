@@ -12,7 +12,7 @@ export default defineConfig({
       userscript: {
         name: 'nb-steprunner',
         namespace: 'https://github.com/afrizagilleon/nb-steprunner',
-        version: '0.8.2',
+        version: '0.9.0',
         author: 'Afriza',
         homepage: 'https://github.com/afrizagilleon/nb-steprunner',
         // Auto-update: Tampermonkey checks these. jsDelivr default-branch = latest build.
@@ -36,6 +36,10 @@ export default defineConfig({
           'GM_getValue',
           'GM_deleteValue',
           'GM_xmlhttpRequest',
+          // ctx.shared: listing keys + live cross-tab change events.
+          'GM_listValues',
+          'GM_addValueChangeListener',
+          'GM_removeValueChangeListener',
         ],
         // No @require: preact/hooks/htm are bundled. The script is fully self-contained,
         // so it also works when someone @requires it from their own wrapper userscript.

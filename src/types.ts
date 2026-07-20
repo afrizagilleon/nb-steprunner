@@ -31,4 +31,5 @@ export interface Ctx {
   data: Record<string, any>;
   refs: Record<string, any>;
   lib: Record<string, any>;
+  shared: any; // cross-tab / cross-host store (see shared.ts)
 }
