@@ -189,6 +189,8 @@ on site B.
 | `await shared.keys()` / `all()` | List keys / everything with provenance. |
 | `await shared.meta(k)` | Which host wrote the key, and when. |
 | `shared.onChange(cb)` | Live changes; returns an unsubscribe function. |
+| `await shared.request(ch, payload, { timeout })` | Ask another tab and get the matching answer (see below). |
+| `shared.respond(ch, handler)` | Answer requests on a channel; returns an unsubscribe function. |
 
 Each key is its own storage entry, so two tabs writing **different** keys never clobber each
 other. Two tabs writing the **same** key is still last-write-wins.
@@ -209,34 +211,43 @@ shared.onChange((key, value, info) => {
 
 ### Request / response between two tabs
 
-A common pattern: Tab A sends a request, a **responder** tab answers. Match a request to
-its answer with an id so a stale answer is never mistaken for a fresh one.
+Tab A asks, a **responder** tab answers. Use `request` / `respond` — they match each answer
+to its request by a unique id, so a leftover answer from an earlier exchange can never be
+returned by mistake (the trap you hit if you reuse one `res` key with raw `set`/`wait`).
+
+| Call | Description |
+|---|---|
+| `await shared.request(channel, payload, { timeout })` | Send a request, resolve with the matching answer. Honours **Stop**. |
+| `shared.respond(channel, handler)` | Answer requests; `handler(payload)`'s return value is sent back. Returns unsubscribe. |
 
 ```js
-// Tab A — send a request and wait for its answer
-const id = crypto.randomUUID();
-await shared.set('req', { id, prompt: 'hello' });
-const res = await shared.wait('res', { timeout: 60000 });
-if (res.id !== id) throw new Error('stale answer');   // ignore an old response
-print('answer:', res.text);
+// Tab A — ask, and get exactly this request's answer
+const answer = await shared.request('gemini', { prompt: 'hello' }, { timeout: 60000 });
+print('answer:', answer);
 ```
 
 ```js
 // Tab B — the responder. Run this ONCE, in a probe cell. Do NOT enable Loop.
-shared.onChange(async (key, req, info) => {
-  if (key !== 'req' || !info.remote) return;           // only remote requests
-  await shared.set('res', { id: req.id, text: `got: ${req.prompt}` });
+shared.respond('gemini', async (payload) => {
+  return `got: ${payload.prompt}`;            // returned value goes back to Tab A
 });
 print('responder armed');
 ```
 
-> **`onChange` is event-driven — never put it inside Run All + Loop.** The subscription
-> stays alive on its own after the cell finishes, so it keeps reacting with no loop. Looping
-> a cell re-registers the handler every iteration; a run then fires it once per iteration
-> (e.g. 57 handlers → one `set` prints 57 times). Register it once in a **probe** cell with
-> Loop **off**. Re-running that same cell replaces its handler rather than adding one, so a
-> manual re-run is safe. If you prefer a loop, drop `onChange` entirely and poll instead:
-> each iteration `await shared.get('req')` and dedupe by `req.id`.
+The responder's return value is delivered to the requester; if the handler throws, the
+requester's `request()` rejects with that message. `request()` cleans up its own answer key,
+so nothing accumulates.
+
+> **`respond`/`onChange` are event-driven — never put them inside Run All + Loop.** The
+> subscription stays alive on its own after the cell finishes, so it keeps answering with no
+> loop. Looping a cell re-registers the handler every iteration; a run then fires it once per
+> iteration (e.g. 57 handlers → one request answered 57 times). Register it once in a
+> **probe** cell with Loop **off**. Re-running that same cell replaces its handler rather
+> than adding one, so a manual re-run is safe.
+
+For lower-level control you can still build your own protocol on `set`/`get`/`wait`/
+`onChange` — but if you reuse a single response key, remember to delete the old value before
+each request, or match on an id yourself.
 
 > **Read this before putting anything sensitive in `shared`.** The store is not partitioned
 > by site: **every** site in your `@match` can read **everything** in it, and so can any

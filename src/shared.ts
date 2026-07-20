@@ -162,4 +162,48 @@ export const shared = {
     subs.set(cb, currentOwner);
     return () => subs.delete(cb);
   },
+
+  /**
+   * Send a request on `channel` and wait for the matching response from respond().
+   * The answer is keyed by a unique id, so a leftover answer from an earlier exchange
+   * can never be mistaken for this one. Honours the timeout and Stop.
+   */
+  async request(channel: string, payload?: any, opts: any = {}) {
+    const { timeout = 60000, interval = 200 } = opts;
+    const id =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+    const resKey = `${channel}:res:${id}`;
+    await this.set(`${channel}:req`, { id, payload, at: Date.now() });
+    try {
+      const env = await this.wait(resKey, { timeout, interval });
+      if (env && 'error' in env) throw new Error(env.error);
+      return env ? env.value : undefined;
+    } finally {
+      // The answer is consumed — don't let it pile up as a stale key.
+      try {
+        await this.delete(resKey);
+      } catch {}
+    }
+  },
+
+  /**
+   * Answer requests sent with request() on `channel`. Register ONCE, in a probe cell,
+   * with Loop OFF — it keeps answering on its own. Returns an unsubscribe function.
+   * Needs live change events (`shared.live`).
+   */
+  respond(channel: string, handler: (payload: any, info: ChangeInfo) => any) {
+    const reqKey = `${channel}:req`;
+    return this.onChange(async (key: string, req: any, info: ChangeInfo) => {
+      if (key !== reqKey || !info.remote || !req || !req.id) return;
+      const resKey = `${channel}:res:${req.id}`;
+      try {
+        const value = await handler(req.payload, info);
+        await this.set(resKey, { value });
+      } catch (e: any) {
+        await this.set(resKey, { error: String((e && e.message) || e) });
+      }
+    });
+  },
 };

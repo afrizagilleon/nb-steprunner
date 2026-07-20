@@ -12,7 +12,7 @@ export default defineConfig({
       userscript: {
         name: 'nb-steprunner',
         namespace: 'https://github.com/afrizagilleon/nb-steprunner',
-        version: '0.10.0-beta.1',
+        version: '0.10.0-beta.2',
         author: 'Afriza',
         homepage: 'https://github.com/afrizagilleon/nb-steprunner',
         // Auto-update: Tampermonkey checks these. jsDelivr default-branch = latest build.
