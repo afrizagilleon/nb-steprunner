@@ -207,6 +207,37 @@ shared.onChange((key, value, info) => {
 });
 ```
 
+### Request / response between two tabs
+
+A common pattern: Tab A sends a request, a **responder** tab answers. Match a request to
+its answer with an id so a stale answer is never mistaken for a fresh one.
+
+```js
+// Tab A — send a request and wait for its answer
+const id = crypto.randomUUID();
+await shared.set('req', { id, prompt: 'hello' });
+const res = await shared.wait('res', { timeout: 60000 });
+if (res.id !== id) throw new Error('stale answer');   // ignore an old response
+print('answer:', res.text);
+```
+
+```js
+// Tab B — the responder. Run this ONCE, in a probe cell. Do NOT enable Loop.
+shared.onChange(async (key, req, info) => {
+  if (key !== 'req' || !info.remote) return;           // only remote requests
+  await shared.set('res', { id: req.id, text: `got: ${req.prompt}` });
+});
+print('responder armed');
+```
+
+> **`onChange` is event-driven — never put it inside Run All + Loop.** The subscription
+> stays alive on its own after the cell finishes, so it keeps reacting with no loop. Looping
+> a cell re-registers the handler every iteration; a run then fires it once per iteration
+> (e.g. 57 handlers → one `set` prints 57 times). Register it once in a **probe** cell with
+> Loop **off**. Re-running that same cell replaces its handler rather than adding one, so a
+> manual re-run is safe. If you prefer a loop, drop `onChange` entirely and poll instead:
+> each iteration `await shared.get('req')` and dedupe by `req.id`.
+
 > **Read this before putting anything sensitive in `shared`.** The store is not partitioned
 > by site: **every** site in your `@match` can read **everything** in it, and so can any
 > notebook you import and run. It is written to disk unencrypted by the userscript manager.

@@ -33,8 +33,26 @@ function warnOnce() {
   );
 }
 
-const subs = new Set<(key: string, value: any, info: ChangeInfo) => void>();
+type Sub = (key: string, value: any, info: ChangeInfo) => void;
+// Each subscription remembers which cell registered it. Cells re-run (manually and, more
+// often, inside the Run All loop), and a persistent subscription that re-registers every
+// run would pile up — one set() would then fire the handler dozens of times. Tagging the
+// owner lets us drop a cell's previous subscriptions before it runs again (see
+// beginCellScope), so a cell always ends with exactly its latest handler.
+const subs = new Map<Sub, string | null>();
+let currentOwner: string | null = null;
 let listenerId: any = null;
+
+// Called by the kernel before a cell runs: forget subscriptions this cell left behind on a
+// previous run, and tag subscriptions made during this run as belonging to it.
+export function beginCellScope(cellId: string | null) {
+  currentOwner = cellId;
+  if (cellId == null) return;
+  for (const [cb, owner] of subs) if (owner === cellId) subs.delete(cb);
+}
+export function endCellScope() {
+  currentOwner = null;
+}
 
 function ensureListener() {
   if (listenerId != null || typeof GM_addValueChangeListener !== 'function') return;
@@ -43,7 +61,7 @@ function ensureListener() {
     (_name: string, _old: any, nv: any, remote: boolean) => {
       if (!nv || !nv.key) return;
       const deliver = (value: any) => {
-        for (const cb of subs) {
+        for (const cb of subs.keys()) {
           try {
             cb(nv.key, value, { action: nv.action, from: nv.host, remote });
           } catch (e) {
@@ -139,9 +157,9 @@ export const shared = {
    * Subscribe to changes from this tab and others. Returns an unsubscribe function.
    * `info.remote` is true when the write came from a different tab.
    */
-  onChange(cb: (key: string, value: any, info: ChangeInfo) => void) {
+  onChange(cb: Sub) {
     ensureListener();
-    subs.add(cb);
+    subs.set(cb, currentOwner);
     return () => subs.delete(cb);
   },
 };

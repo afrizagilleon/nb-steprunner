@@ -5,6 +5,7 @@ import { CELL_HEADER } from './constants';
 import { compileModule } from './compile';
 import { formatError } from './errors';
 import { frames } from './frames';
+import { beginCellScope, endCellScope } from './shared';
 import type { Cell, RunResult } from './types';
 
 export function compile(cell: Cell) {
@@ -17,6 +18,9 @@ export async function runCell(cell: Cell, signal?: AbortSignal): Promise<RunResu
   const out: string[] = [];
   printStack.push((line) => out.push(line));
   signalStack.push(signal);
+  // Drop shared.onChange handlers this cell registered on a previous run, so re-running
+  // (especially inside the Run All loop) replaces its subscription instead of stacking.
+  beginCellScope(cell.id);
   const api = {
     ctx,
     lib: ctx.lib,
@@ -48,5 +52,6 @@ export async function runCell(cell: Cell, signal?: AbortSignal): Promise<RunResu
   } finally {
     printStack.pop();
     signalStack.pop();
+    endCellScope();
   }
 }
