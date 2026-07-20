@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 import monkey from 'vite-plugin-monkey';
 
-// Userscript-specific bundler. preact/hooks/htm stay on the CDN via @require
-// (not bundled) — behavior identical to the single-file v0.6.
+// Userscript-specific bundler. Everything (preact, htm, CodeMirror) is bundled so the
+// output is a single self-contained file with no load-order or CDN dependencies.
 export default defineConfig({
   // Minify the bundle — CodeMirror makes the unminified output large (~1MB).
   build: { minify: 'esbuild' },
@@ -12,7 +12,7 @@ export default defineConfig({
       userscript: {
         name: 'nb-steprunner',
         namespace: 'https://github.com/afrizagilleon/nb-steprunner',
-        version: '0.8.0',
+        version: '0.8.1',
         author: 'Afriza',
         homepage: 'https://github.com/afrizagilleon/nb-steprunner',
         // Auto-update: Tampermonkey checks these. jsDelivr default-branch = latest build.
@@ -37,11 +37,8 @@ export default defineConfig({
           'GM_deleteValue',
           'GM_xmlhttpRequest',
         ],
-        require: [
-          'https://cdn.jsdelivr.net/npm/preact@10.23.1/dist/preact.umd.js',
-          'https://cdn.jsdelivr.net/npm/preact@10.23.1/hooks/dist/hooks.umd.js',
-          'https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js',
-        ],
+        // No @require: preact/hooks/htm are bundled. The script is fully self-contained,
+        // so it also works when someone @requires it from their own wrapper userscript.
         'run-at': 'document-idle',
       },
       build: {

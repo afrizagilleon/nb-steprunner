@@ -1,10 +1,14 @@
 export const st: any = {
-  panel: { position: 'fixed', background: '#1e1e2e', color: '#cdd6f4', borderRadius: '10px', fontFamily: 'ui-monospace, monospace', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,.4)', zIndex: 2147483647, overflow: 'hidden', display: 'flex', flexDirection: 'column', userSelect: 'none' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#313244', cursor: 'move', flex: '0 0 auto' },
+  // NOTE: `user-select: none` must NOT cover the panel as a whole. It is applied to the
+  // chrome (header/toolbar/controls/list) only, because an ancestor with user-select:none
+  // breaks caret placement inside CodeMirror's contenteditable on Firefox — typing a space
+  // then yields a <br>/NBSP instead of a space (shown as a red ·).
+  panel: { position: 'fixed', background: '#1e1e2e', color: '#cdd6f4', borderRadius: '10px', fontFamily: 'ui-monospace, monospace', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,.4)', zIndex: 2147483647, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#313244', cursor: 'move', flex: '0 0 auto', userSelect: 'none' },
   host: { opacity: 0.5, fontWeight: 'normal', marginLeft: 6 },
-  toolbar: { display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #313244', flex: '0 0 auto' },
+  toolbar: { display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #313244', flex: '0 0 auto', userSelect: 'none' },
   resume: { marginLeft: 'auto', fontSize: 11, color: '#f9e2af' },
-  controls: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #313244', flex: '0 0 auto', fontSize: 11 },
+  controls: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #313244', flex: '0 0 auto', fontSize: 11, userSelect: 'none' },
   ctrlLabel: { display: 'inline-flex', alignItems: 'center', gap: 3, color: '#a6adc8' },
   numIn: { width: 46, background: '#181825', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: 4, fontSize: 11, padding: '1px 3px' },
   sel: { background: '#181825', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: 4, fontSize: 11 },
@@ -15,7 +19,7 @@ export const st: any = {
   cellRowOff: { opacity: 0.4 },
   main: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 },
   topArea: { display: 'flex', flex: '1 1 auto', minHeight: 0 },
-  list: { borderRight: '1px solid #313244', overflowY: 'auto', flex: '0 0 auto' },
+  list: { borderRight: '1px solid #313244', overflowY: 'auto', flex: '0 0 auto', userSelect: 'none' },
   vsplit: { width: 5, flex: '0 0 auto', cursor: 'col-resize', background: '#313244' },
   hsplit: { height: 5, flex: '0 0 auto', cursor: 'row-resize', background: '#313244' },
   outputWrap: { display: 'flex', flexDirection: 'column', flex: '0 0 auto', minHeight: 0 },
@@ -31,7 +35,7 @@ export const st: any = {
   editorPane: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
   editorHead: { display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderBottom: '1px solid #313244' },
   editorTitle: { color: '#89b4fa' },
-  editorHost: { flex: '1 1 auto', minHeight: 0, overflow: 'hidden', background: '#282c34', userSelect: 'text' },
+  editorHost: { flex: '1 1 auto', minHeight: 0, overflow: 'hidden', background: '#282c34', userSelect: 'text', WebkitUserSelect: 'text', MozUserSelect: 'text' },
   runRow: { padding: '6px 8px', borderTop: '1px solid #313244', flex: '0 0 auto' },
   output: { margin: 0, padding: 8, flex: '1 1 auto', overflow: 'auto', background: '#11111b', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'text' },
   iconBtn: { background: 'none', border: 'none', color: '#cdd6f4', cursor: 'pointer' },

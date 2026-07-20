@@ -20,8 +20,15 @@ export interface EditorOptions {
 
 // Create a CodeMirror 6 editor. Tab indents (not focus-move); Ctrl/Cmd+Enter runs the cell.
 export function createEditor(opts: EditorOptions): EditorHandle {
+  // We live inside a Shadow DOM. CodeMirror needs the root to mount its stylesheet there
+  // and to read the selection from it — state it explicitly rather than rely on detection.
+  const rootNode = opts.parent.getRootNode();
+  const root =
+    rootNode instanceof ShadowRoot || rootNode instanceof Document ? rootNode : undefined;
+
   const view = new EditorView({
     parent: opts.parent,
+    root,
     state: EditorState.create({
       doc: opts.doc,
       extensions: [

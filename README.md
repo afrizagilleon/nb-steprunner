@@ -71,14 +71,24 @@ Install [Tampermonkey](https://www.tampermonkey.net/), then either:
 complete userscript with its own metadata and auto-update. **Change `@match` to your target site.**
 
 **B. Via `@require` (advanced)** — reference the engine from your own wrapper userscript, pinned
-to an immutable tag:
+to an immutable tag. The bundle is self-contained (preact, htm and CodeMirror are all inside),
+so the engine line is the only `@require` you need:
 
 ```js
-// @require https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner@vX.Y.Z/dist/nb-steprunner.user.js
+// ==UserScript==
+// @name         my-site-notebook
+// @match        https://your-target-site/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_deleteValue
+// @grant        GM_xmlhttpRequest
+// @require      https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner@vX.Y.Z/dist/nb-steprunner.user.js
+// ==/UserScript==
 ```
 
 > When you `@require` a file, **its own metadata header is ignored**. Your wrapper must declare
-> the required `@grant`, `@match`, `@connect`, and the preact/htm `@require` lines itself.
+> the `@grant`, `@match` and `@connect` lines itself — as shown above. Miss a `@grant` and the
+> panel will fail to load.
 
 ## Quick start
 
@@ -230,8 +240,8 @@ Two workarounds:
 
 ## Architecture
 
-Layered (MVC-ish); the output stays a **single** userscript. preact / preact hooks / htm are
-loaded from the CDN via `@require` and are not bundled.
+Layered (MVC-ish); the output is a **single self-contained** userscript — preact, htm and
+CodeMirror are bundled, so there are no CDN `@require`s and no load-order assumptions.
 
 | Layer | Files |
 |---|---|
