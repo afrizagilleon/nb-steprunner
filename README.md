@@ -83,13 +83,22 @@ so the engine line is the only `@require` you need:
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
+// @grant        GM_listValues                // ctx.shared: list/inspect keys
+// @grant        GM_addValueChangeListener    // ctx.shared: live cross-tab events
+// @grant        GM_removeValueChangeListener
 // @require      https://cdn.jsdelivr.net/gh/afrizagilleon/nb-steprunner@vX.Y.Z/dist/nb-steprunner.user.js
 // ==/UserScript==
 ```
 
-> When you `@require` a file, **its own metadata header is ignored**. Your wrapper must declare
-> the `@grant`, `@match` and `@connect` lines itself — as shown above. Miss a `@grant` and the
-> panel will fail to load.
+> When you `@require` a file, **its own metadata header is ignored** — the engine runs under
+> *your* wrapper's grants, so your wrapper must declare every `@grant` the engine uses, plus
+> `@match` (and `@connect` if you use `gmFetch` cross-origin). The list above is complete; miss
+> one and the feature that needs it fails (e.g. without the `ctx.shared` grants, cross-tab
+> sharing silently does nothing).
+>
+> **Pin a real version** in place of `@vX.Y.Z` (e.g. `@v0.9.0`). A bare URL without `@tag`
+> resolves to the repository's default branch on jsDelivr, which may lag behind the latest
+> release — pinning a tag is both immutable and current.
 
 ## Quick start
 
