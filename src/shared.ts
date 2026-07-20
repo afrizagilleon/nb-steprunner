@@ -175,7 +175,7 @@ export const shared = {
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random()}`;
     const resKey = `${channel}:res:${id}`;
-    await this.set(`${channel}:req`, { id, payload, at: Date.now() });
+    await this.set(`${channel}:req`, { id, payload, from: host, at: Date.now() });
     try {
       const env = await this.wait(resKey, { timeout, interval });
       if (env && 'error' in env) throw new Error(env.error);
@@ -189,21 +189,41 @@ export const shared = {
   },
 
   /**
-   * Answer requests sent with request() on `channel`. Register ONCE, in a probe cell,
-   * with Loop OFF — it keeps answering on its own. Returns an unsubscribe function.
-   * Needs live change events (`shared.live`).
+   * Serve one request on `channel`: wait for a request (from request() in another tab),
+   * run `handler(payload, { from })`, and send its return value back as the answer.
+   * Resolves once a single request is handled.
+   *
+   * This is the server side, built for the notebook's own loop: put it in a STEP cell and
+   * click **Run All with Loop ON** — the loop calls it again after each request, so the cell
+   * becomes a request-handling server. It works no matter who starts first (a request left
+   * waiting is picked up as soon as the server runs), needs no live change events, and Stop
+   * cancels it cleanly. `timeout: 0` (the default) waits forever; a positive timeout makes it
+   * resolve with `false` if nothing arrives in time (handy for a single, non-looping run).
    */
-  respond(channel: string, handler: (payload: any, info: ChangeInfo) => any) {
+  async serve(
+    channel: string,
+    handler: (payload: any, info: { from: string }) => any,
+    opts: any = {}
+  ) {
+    const { timeout = 0, poll = 250 } = opts;
     const reqKey = `${channel}:req`;
-    return this.onChange(async (key: string, req: any, info: ChangeInfo) => {
-      if (key !== reqKey || !info.remote || !req || !req.id) return;
-      const resKey = `${channel}:res:${req.id}`;
-      try {
-        const value = await handler(req.payload, info);
-        await this.set(resKey, { value });
-      } catch (e: any) {
-        await this.set(resKey, { error: String((e && e.message) || e) });
+    const start = Date.now();
+    for (;;) {
+      const req = await this.get(reqKey, undefined);
+      if (req && req.id) {
+        // Claim the request so a second server (or the next loop tick) won't answer it twice.
+        await this.delete(reqKey);
+        const resKey = `${channel}:res:${req.id}`;
+        try {
+          const value = await handler(req.payload, { from: req.from });
+          await this.set(resKey, { value });
+        } catch (e: any) {
+          await this.set(resKey, { error: String((e && e.message) || e) });
+        }
+        return req.id;
       }
-    });
+      if (timeout > 0 && Date.now() - start > timeout) return false;
+      await sleep(poll); // abortable — Stop breaks out immediately
+    }
   },
 };

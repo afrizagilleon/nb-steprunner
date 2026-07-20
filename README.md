@@ -188,9 +188,9 @@ on site B.
 | `await shared.delete(k)` / `clear()` | Remove one key / all keys. |
 | `await shared.keys()` / `all()` | List keys / everything with provenance. |
 | `await shared.meta(k)` | Which host wrote the key, and when. |
-| `shared.onChange(cb)` | Live changes; returns an unsubscribe function. |
-| `await shared.request(ch, payload, { timeout })` | Ask another tab and get the matching answer (see below). |
-| `shared.respond(ch, handler)` | Answer requests on a channel; returns an unsubscribe function. |
+| `await shared.request(ch, payload, { timeout })` | **Ask** another tab and get the matching answer (see below). |
+| `await shared.serve(ch, handler, { timeout })` | **Answer** requests — the server side; run it in a looping cell. |
+| `shared.onChange(cb)` | Low-level live changes; returns an unsubscribe function. |
 
 Each key is its own storage entry, so two tabs writing **different** keys never clobber each
 other. Two tabs writing the **same** key is still last-write-wins.
@@ -209,45 +209,43 @@ shared.onChange((key, value, info) => {
 });
 ```
 
-### Request / response between two tabs
+### Ask one tab, answer from another (request / serve)
 
-Tab A asks, a **responder** tab answers. Use `request` / `respond` — they match each answer
-to its request by a unique id, so a leftover answer from an earlier exchange can never be
-returned by mistake (the trap you hit if you reuse one `res` key with raw `set`/`wait`).
+One tab **asks** with `request`; another tab is the **server** that answers with `serve`.
+Each answer is matched to its request by a unique id, so a leftover answer from an earlier
+exchange can never come back by mistake — and both sides work by polling, so **the order you
+start them in does not matter** and no `@grant` for live events is needed.
 
-| Call | Description |
-|---|---|
-| `await shared.request(channel, payload, { timeout })` | Send a request, resolve with the matching answer. Honours **Stop**. |
-| `shared.respond(channel, handler)` | Answer requests; `handler(payload)`'s return value is sent back. Returns unsubscribe. |
+**Tab A — ask.** Any cell; run it whenever you want an answer:
 
 ```js
-// Tab A — ask, and get exactly this request's answer
 const answer = await shared.request('gemini', { prompt: 'hello' }, { timeout: 60000 });
 print('answer:', answer);
 ```
 
+**Tab B — the server.** Put this in ONE **step** cell, then press **▶▶ Run All with the
+`loop` checkbox ON**. That built-in loop *is* the server loop: `serve` waits for a request,
+answers it, and the loop runs it again for the next one. Press **■ Stop** to shut it down.
+
 ```js
-// Tab B — the responder. Run this ONCE, in a probe cell. Do NOT enable Loop.
-shared.respond('gemini', async (payload) => {
-  return `got: ${payload.prompt}`;            // returned value goes back to Tab A
+// Handles one request per loop tick. The value you return goes back to Tab A.
+await shared.serve('gemini', async (prompt) => {
+  return `got: ${prompt.prompt}`;
 });
-print('responder armed');
 ```
 
-The responder's return value is delivered to the requester; if the handler throws, the
-requester's `request()` rejects with that message. `request()` cleans up its own answer key,
-so nothing accumulates.
+That is the whole model:
 
-> **`respond`/`onChange` are event-driven — never put them inside Run All + Loop.** The
-> subscription stays alive on its own after the cell finishes, so it keeps answering with no
-> loop. Looping a cell re-registers the handler every iteration; a run then fires it once per
-> iteration (e.g. 57 handlers → one request answered 57 times). Register it once in a
-> **probe** cell with Loop **off**. Re-running that same cell replaces its handler rather
-> than adding one, so a manual re-run is safe.
+- **Ask** → `request`, in any cell, run on demand.
+- **Answer** → `serve`, in a step cell, **Run All + loop ON** (Stop to end it).
 
-For lower-level control you can still build your own protocol on `set`/`get`/`wait`/
-`onChange` — but if you reuse a single response key, remember to delete the old value before
-each request, or match on an id yourself.
+If the handler throws, the asking tab's `request()` rejects with that message. Both sides
+clean up their own keys, so nothing piles up. `serve` also takes `{ timeout }` if you want a
+single, non-looping run that gives up after a while (it returns `false` on timeout).
+
+> Prefer this over the low-level `onChange`. `onChange` is an event listener: it only hears
+> requests sent *after* it is armed, and if you put it in a loop it re-subscribes every
+> iteration (one request then answered many times). `serve` + the loop avoids both traps.
 
 > **Read this before putting anything sensitive in `shared`.** The store is not partitioned
 > by site: **every** site in your `@match` can read **everything** in it, and so can any
