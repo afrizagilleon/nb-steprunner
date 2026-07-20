@@ -24,6 +24,7 @@ export interface RunResult {
   result?: any;
   error?: any;
   output: string;
+  aborted?: boolean; // stopped by the user, not a real failure
 }
 
 export interface Ctx {

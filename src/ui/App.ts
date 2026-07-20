@@ -14,7 +14,7 @@ import { download, buildMarkdown, parseNotebookJSON, parseMarkdown } from '../io
 import { runCell } from '../kernel';
 import { checkpoint } from '../checkpoint';
 import { ctx } from '../ctx';
-import { sleep } from '../helpers';
+import { abortableSleep } from '../helpers';
 import { st } from './styles';
 import { createEditor, type EditorHandle } from './editor';
 import { clampPanel, clampMini, DEFAULT_PANEL, DEFAULT_MINI } from './layout';
@@ -26,7 +26,7 @@ export function App() {
   const [statuses, setStatuses] = useState({} as Record<string, string>); // id -> 'idle'|'running'|'ok'|'error'
   const [outputs, setOutputs] = useState({} as Record<string, string>); // id -> text
   const [resumeId, setResumeId] = useState(null as string | null);
-  const [running, setRunning] = useState(false);
+  const [busy, setBusy] = useState(false); // any run in progress (single cell or sequence)
   const [loop, setLoop] = useState(false);
   const [delay, setDelay] = useState(500 as any);
   const [maxIter, setMaxIter] = useState(100 as any);
@@ -42,6 +42,8 @@ export function App() {
   const miniDrag = useRef(null);
   const saveTimer = useRef(null);
   const stopRef = useRef(false);
+  const busyRef = useRef(false); // synchronous guard against overlapping runs
+  const abortRef = useRef(null as AbortController | null); // aborts the active run
   const cellsRef = useRef([] as Cell[]); // latest cells to read inside the loop
   const dragIdRef = useRef(null as string | null); // id of the cell being dragged
   const editorHostRef = useRef(null as HTMLElement | null); // CodeMirror mount point
@@ -176,13 +178,48 @@ export function App() {
     if (selectedId === id) setSelectedId(null);
   }
 
-  async function doRun(cell: Cell) {
+  // Low-level: run one cell under the active run's abort signal.
+  async function doRun(cell: Cell, signal?: AbortSignal) {
     setStatuses((s) => ({ ...s, [cell.id]: 'running' }));
-    const res = await runCell(cell);
-    setStatuses((s) => ({ ...s, [cell.id]: res.ok ? 'ok' : 'error' }));
+    const res = await runCell(cell, signal);
+    setStatuses((s) => ({
+      ...s,
+      [cell.id]: res.aborted ? 'idle' : res.ok ? 'ok' : 'error',
+    }));
     setOutputs((o) => ({ ...o, [cell.id]: res.output }));
     if (res.ok && cell.kind === 'step') setResumeId(cell.id);
     return res;
+  }
+
+  // A run "session" wraps single runs and Run All alike, so Stop can abort either.
+  function beginRun(): AbortSignal {
+    busyRef.current = true;
+    setBusy(true);
+    stopRef.current = false;
+    abortRef.current = new AbortController();
+    return abortRef.current.signal;
+  }
+  function endRun() {
+    busyRef.current = false;
+    setBusy(false);
+    stopRef.current = false;
+    abortRef.current = null;
+  }
+  // Stop = abort: cancels in-flight sleep/waitFor/gmFetch and halts the loop.
+  function stopRun() {
+    stopRef.current = true;
+    if (abortRef.current) abortRef.current.abort();
+  }
+
+  // Manual single-cell run (▶ / Ctrl+Enter). Abortable via Stop.
+  async function runSingle(cell: Cell) {
+    if (busyRef.current) return;
+    const signal = beginRun();
+    try {
+      await doRun(cell, signal);
+    } finally {
+      endRun();
+    }
   }
 
   function toggleEnabled(id: string) {
@@ -205,16 +242,11 @@ export function App() {
     });
   }
 
-  function stopRun() {
-    stopRef.current = true;
-  }
-
   // Run All: run enabled 'step' cells, top to bottom. Loop + on-error options.
-  // setup/probe/excluded are skipped. Can always be halted via Stop.
+  // setup/probe/excluded are skipped. Can always be halted via Stop (aborts mid-cell).
   async function runSequence() {
-    if (running) return;
-    stopRef.current = false;
-    setRunning(true);
+    if (busyRef.current) return;
+    const signal = beginRun();
     const maxN = Number(maxIter) || 0; // <= 0 -> unlimited
     const wait = Math.max(0, Number(delay) || 0);
     try {
@@ -226,7 +258,8 @@ export function App() {
         );
         for (const c of steps) {
           if (stopRef.current) return;
-          const res = await doRun(c);
+          const res = await doRun(c, signal);
+          if (res.aborted) return;
           if (!res.ok) {
             if (onError === 'reload') {
               location.reload();
@@ -236,11 +269,17 @@ export function App() {
             // 'continue' -> go to the next cell
           }
         }
-        if (loop && !stopRef.current && wait) await sleep(wait);
+        // Abortable inter-iteration delay, so Stop cuts the wait too.
+        if (loop && !stopRef.current && wait) {
+          try {
+            await abortableSleep(wait, signal);
+          } catch (_) {
+            return;
+          }
+        }
       } while (loop && !stopRef.current && (maxN <= 0 || iter < maxN));
     } finally {
-      setRunning(false);
-      stopRef.current = false;
+      endRun();
     }
   }
 
@@ -253,7 +292,7 @@ export function App() {
     setResumeId(null);
     // Rebuild lib from setup cells.
     for (const c of cellsRef.current.filter((x) => x.kind === 'setup')) {
-      await doRun(c);
+      await doRun(c, abortRef.current ? abortRef.current.signal : undefined);
     }
   }
 
@@ -403,7 +442,7 @@ export function App() {
   runCurrentRef.current = () => {
     if (!selected) return;
     const src = editorRef.current ? editorRef.current.getDoc() : selected.source;
-    doRun({ ...selected, source: src });
+    runSingle({ ...selected, source: src });
   };
 
   const panelStyle = { ...st.panel, left: pos.x + 'px', top: pos.y + 'px', width: pos.w + 'px', height: pos.h + 'px' };
@@ -426,7 +465,7 @@ export function App() {
       </div>
 
       <div style=${st.controls}>
-        ${running
+        ${busy
           ? html`<button style=${st.stopBtn} onClick=${stopRun}>■ Stop</button>`
           : html`<button style=${st.smallBtn} onClick=${runSequence}>▶▶ Run All</button>`}
         <label style=${st.ctrlLabel}>
@@ -471,7 +510,7 @@ export function App() {
                   : html`<span style=${st.chk}></span>`}
                 <span style=${st.dot(statuses[c.id])}></span>
                 <span style=${st.cellName}>${c.name}${c.kind !== 'step' ? ' ·' + c.kind : ''}</span>
-                <button style=${st.runBtn} onClick=${(e: any) => { e.stopPropagation(); doRun(c); }}>▶</button>
+                <button style=${st.runBtn} onClick=${(e: any) => { e.stopPropagation(); runSingle(c); }}>▶</button>
               </div>
             `)}
           </div>

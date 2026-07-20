@@ -1,6 +1,6 @@
 {
   "name": "nb-steprunner",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Notebook-style step runner userscript (blob-module kernel, ctx, checkpoint, loop).",
   "license": "MIT",
