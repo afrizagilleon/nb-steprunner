@@ -3,30 +3,12 @@ import { $, $$, sleep, gmFetch, waitFor, print, fmt, printStack, signalStack } f
 import { checkpoint } from './checkpoint';
 import { CELL_HEADER } from './constants';
 import { compileModule } from './compile';
+import { formatError } from './errors';
 import { frames } from './frames';
 import type { Cell, RunResult } from './types';
 
 export function compile(cell: Cell) {
   return compileModule(cell.source, CELL_HEADER, `nb-cell-${cell.name || cell.id}`);
-}
-
-// compile() wraps the cell source in 2 lines before the user's code (the `async (api) =>`
-// line and the injected CELL_HEADER), so a stack line points 2 higher than the real one.
-const HEADER_LINES = 2;
-
-// Rewrite `nb-cell-*.js:LINE:COL` / `nb-frame-*.js:LINE:COL` back to the line the user wrote.
-function remapLines(text: string): string {
-  return text.replace(
-    /(nb-(?:cell|frame)[^\s:)]*\.js):(\d+):(\d+)/g,
-    (_m, file, line, col) => `${file}:${Math.max(1, Number(line) - HEADER_LINES)}:${col}`
-  );
-}
-
-function formatError(err: any): string {
-  if (err && err.stack) return '✖ ' + remapLines(String(err.stack));
-  const name = (err && err.name) || 'Error';
-  const msg = err && err.message != null ? err.message : String(err);
-  return `✖ ${name}: ${msg}`;
 }
 
 // runCell executes a single cell. `signal` lets a run be aborted (Stop); when it fires,
@@ -50,7 +32,7 @@ export async function runCell(cell: Cell, signal?: AbortSignal): Promise<RunResu
     if (err && err.name === 'AbortError') {
       return { ok: false, aborted: true, error: err, output: tail('■ stopped') };
     }
-    return { ok: false, error: err, output: tail(formatError(err)) };
+    return { ok: false, error: err, output: tail(formatError(err, cell.source)) };
   } finally {
     printStack.pop();
     signalStack.pop();
